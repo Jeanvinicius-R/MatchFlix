@@ -1,0 +1,22 @@
+# Banco de dados local para desenvolvimento. A aplicação em si ainda roda
+# fora de container nesta etapa (ver README, seção Docker).
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aurel
+      POSTGRES_PASSWORD: aurel
+      POSTGRES_DB: aurel
+    ports:
+      - "5432:5432"
+    volumes:
+      - aurel_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aurel"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  aurel_postgres_data:

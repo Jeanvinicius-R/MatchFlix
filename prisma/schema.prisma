@@ -1,0 +1,267 @@
+// Prisma schema for Aurel.
+// Layering: components -> services -> repositories -> Prisma (this file).
+// See README.md "Decisões arquiteturais" for the full data-flow explanation.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+// Brazilian content rating ("classificação indicativa").
+enum AgeRating {
+  L
+  TEN
+  TWELVE
+  FOURTEEN
+  SIXTEEN
+  EIGHTEEN
+}
+
+enum MediaType {
+  POSTER
+  BACKDROP
+  BANNER
+  AVATAR
+  VIDEO
+  SUBTITLE
+  LOGO
+}
+
+// Where the referenced asset physically lives. Lets storage move from the
+// filesystem to S3/R2/MinIO later without touching the content models.
+enum StorageProvider {
+  LOCAL
+  S3
+  R2
+  MINIO
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         UserRole @default(USER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  profiles Profile[]
+}
+
+// A profile is the unit that owns watch history, progress and favorites,
+// so every account can hold multiple independent viewing identities.
+model Profile {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @db.Uuid
+  name          String
+  /** Restricts browsing to content rated L (livre) when true. Enforced in profile.service.ts, not here. */
+  isKids        Boolean  @default(false)
+  avatarMediaId String?  @db.Uuid
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  avatarMedia Media? @relation("ProfileAvatar", fields: [avatarMediaId], references: [id], onDelete: SetNull)
+
+  watchHistory  WatchHistory[]
+  watchProgress WatchProgress[]
+  favorites     Favorite[]
+}
+
+model Genre {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  movies Movie[]
+  series Series[]
+}
+
+// Generic reference to a stored asset (image, video or subtitle file).
+// Only metadata lives here — the binary itself lives in the configured
+// storage provider. Movie/Series/Season/Episode point to this table;
+// it does not know which content is using it (kept decoupled on purpose).
+model Media {
+  id                String          @id @default(uuid()) @db.Uuid
+  type              MediaType
+  storageProvider   StorageProvider @default(LOCAL)
+  storageKey        String
+  url               String
+  fileName          String?
+  mimeType          String?
+  sizeInBytes       BigInt?
+  width             Int?
+  height            Int?
+  durationInSeconds Int?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  profileAvatars    Profile[] @relation("ProfileAvatar")
+  moviePosters      Movie[]   @relation("MoviePoster")
+  movieBackdrops    Movie[]   @relation("MovieBackdrop")
+  movieVideos       Movie[]   @relation("MovieVideo")
+  seriesPosters     Series[]  @relation("SeriesPoster")
+  seriesBackdrops   Series[]  @relation("SeriesBackdrop")
+  seasonPosters     Season[]  @relation("SeasonPoster")
+  episodeVideos     Episode[] @relation("EpisodeVideo")
+  episodeThumbnails Episode[] @relation("EpisodeThumbnail")
+}
+
+model Movie {
+  id                String    @id @default(uuid()) @db.Uuid
+  slug              String    @unique
+  title             String
+  originalTitle     String?
+  synopsis          String
+  releaseYear       Int
+  ageRating         AgeRating
+  durationInMinutes Int
+  isActive          Boolean   @default(true)
+  posterMediaId     String?   @db.Uuid
+  backdropMediaId   String?   @db.Uuid
+  videoMediaId      String?   @db.Uuid
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  poster   Media?  @relation("MoviePoster", fields: [posterMediaId], references: [id], onDelete: SetNull)
+  backdrop Media?  @relation("MovieBackdrop", fields: [backdropMediaId], references: [id], onDelete: SetNull)
+  video    Media?  @relation("MovieVideo", fields: [videoMediaId], references: [id], onDelete: SetNull)
+  genres   Genre[]
+
+  watchHistory  WatchHistory[]
+  watchProgress WatchProgress[]
+  favorites     Favorite[]
+
+  @@index([isActive])
+}
+
+model Series {
+  id              String    @id @default(uuid()) @db.Uuid
+  slug            String    @unique
+  title           String
+  originalTitle   String?
+  synopsis        String
+  releaseYear     Int
+  ageRating       AgeRating
+  isActive        Boolean   @default(true)
+  posterMediaId   String?   @db.Uuid
+  backdropMediaId String?   @db.Uuid
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  poster   Media?  @relation("SeriesPoster", fields: [posterMediaId], references: [id], onDelete: SetNull)
+  backdrop Media?  @relation("SeriesBackdrop", fields: [backdropMediaId], references: [id], onDelete: SetNull)
+  genres   Genre[]
+
+  seasons   Season[]
+  favorites Favorite[]
+
+  @@index([isActive])
+}
+
+model Season {
+  id            String   @id @default(uuid()) @db.Uuid
+  seriesId      String   @db.Uuid
+  seasonNumber  Int
+  title         String?
+  synopsis      String?
+  releaseYear   Int?
+  posterMediaId String?  @db.Uuid
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  series   Series    @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  poster   Media?    @relation("SeasonPoster", fields: [posterMediaId], references: [id], onDelete: SetNull)
+  episodes Episode[]
+
+  @@unique([seriesId, seasonNumber])
+}
+
+model Episode {
+  id                String   @id @default(uuid()) @db.Uuid
+  seasonId          String   @db.Uuid
+  episodeNumber     Int
+  title             String
+  synopsis          String?
+  durationInMinutes Int?
+  videoMediaId      String?  @db.Uuid
+  thumbnailMediaId  String?  @db.Uuid
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  season    Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  video     Media? @relation("EpisodeVideo", fields: [videoMediaId], references: [id], onDelete: SetNull)
+  thumbnail Media? @relation("EpisodeThumbnail", fields: [thumbnailMediaId], references: [id], onDelete: SetNull)
+
+  watchHistory  WatchHistory[]
+  watchProgress WatchProgress[]
+
+  @@unique([seasonId, episodeNumber])
+}
+
+// Append-only log of playback sessions, used for "assistidos recentemente"
+// and future recommendation/analytics needs. Exactly one of movieId /
+// episodeId is set per row (enforced in the service layer with Zod).
+model WatchHistory {
+  id        String   @id @default(uuid()) @db.Uuid
+  profileId String   @db.Uuid
+  movieId   String?  @db.Uuid
+  episodeId String?  @db.Uuid
+  watchedAt DateTime @default(now())
+
+  profile Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  movie   Movie?   @relation(fields: [movieId], references: [id], onDelete: Cascade)
+  episode Episode? @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@index([profileId, watchedAt])
+}
+
+// One row per (profile, content), continuously overwritten. Powers
+// "continuar assistindo". Exactly one of movieId / episodeId is set.
+model WatchProgress {
+  id                String   @id @default(uuid()) @db.Uuid
+  profileId         String   @db.Uuid
+  movieId           String?  @db.Uuid
+  episodeId         String?  @db.Uuid
+  positionInSeconds Int
+  durationInSeconds Int
+  completed         Boolean  @default(false)
+  updatedAt         DateTime @updatedAt
+
+  profile Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  movie   Movie?   @relation(fields: [movieId], references: [id], onDelete: Cascade)
+  episode Episode? @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  // Postgres treats each NULL as distinct, so these constraints only
+  // enforce uniqueness on the pair that is actually populated per row.
+  @@unique([profileId, movieId])
+  @@unique([profileId, episodeId])
+}
+
+// "Minha lista". Exactly one of movieId / seriesId is set per row —
+// favoriting a series applies to the whole show, not a single episode.
+model Favorite {
+  id        String   @id @default(uuid()) @db.Uuid
+  profileId String   @db.Uuid
+  movieId   String?  @db.Uuid
+  seriesId  String?  @db.Uuid
+  createdAt DateTime @default(now())
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  movie   Movie?  @relation(fields: [movieId], references: [id], onDelete: Cascade)
+  series  Series? @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, movieId])
+  @@unique([profileId, seriesId])
+}
