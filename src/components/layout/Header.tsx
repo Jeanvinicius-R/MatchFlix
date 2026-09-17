@@ -32,6 +32,7 @@ export async function Header() {
           <AuthHeaderActions
             userName={session?.user?.name ?? null}
             profileName={activeProfile?.name ?? null}
+            role={session?.user?.role ?? null}
           />
         </div>
       </div>

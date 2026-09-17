@@ -37,7 +37,7 @@ interface SeriesRecord {
   _count: { seasons: number };
 }
 
-const AGE_RATING_LABELS: Record<PrismaAgeRating, AgeRating> = {
+export const AGE_RATING_LABELS: Record<PrismaAgeRating, AgeRating> = {
   L: "L",
   TEN: "10",
   TWELVE: "12",

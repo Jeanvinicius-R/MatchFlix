@@ -2,7 +2,7 @@
 
 Plataforma de streaming de filmes e séries — interface premium, arquitetura escalável e segura, construída de forma incremental.
 
-> **Status:** Etapa 6 — integração com a TMDB implementada (`services/tmdb`). Painel administrativo (que vai efetivamente usar isso pra cadastrar conteúdo) e streaming real ainda não existem.
+> **Status:** Etapa 7 — painel administrativo implementado (`/admin`). Uploads de mídia (pôsteres/backdrops reais) e streaming real ainda não existem.
 
 ## Sumário
 
@@ -159,21 +159,26 @@ src/
   app/
     (auth)/             Grupo de rotas de /login e /signup (layout centralizado próprio)
     api/auth/           Rota catch-all do NextAuth
+    api/tmdb/           Rotas internas de consulta à TMDB (search, movie/[id], series/[id]) — role ADMIN
+    admin/              Painel administrativo (/admin/movies, /series, /genres) — protegido por requireAdmin()
     profiles/           Seleção/criação de perfil (/profiles, /profiles/new, /profiles/select/[id])
     ...                 Demais rotas do App Router
   components/
-    ui/                 Componentes de UI genéricos e reutilizáveis (Button, Input, ...)
+    ui/                 Componentes de UI genéricos e reutilizáveis (Button, Input, Select, Textarea, ...)
     layout/             Componentes estruturais (Header, Logo, busca)
   features/
     home/               Componentes específicos da Home (hero, carrosséis, cards)
     auth/               Formulários de login/cadastro e ações do header (entrar/sair)
     profiles/           Avatar, grade de seleção e formulário de novo perfil
+    admin/              Formulários e componentes do painel (MovieForm, SeriesForm, GenreManager, TmdbSearchPicker, ...)
   services/             Regras de negócio; ponto único de acesso a dados para a UI
+    movie.service.ts, series.service.ts, genre.service.ts  Regras do painel administrativo (slug, gêneros, import TMDB)
   repositories/
-    content.repository.ts  Consultas Prisma para filmes/séries
+    content.repository.ts  Consultas Prisma para filmes/séries (leitura pública)
     content.mapper.ts      Converte os modelos do Prisma para os tipos de domínio (ContentSummary)
     user.repository.ts     Consultas Prisma para usuários (auth)
     profile.repository.ts  Consultas Prisma para perfis
+    movie.repository.ts, series.repository.ts, genre.repository.ts  Escrita administrativa (CRUD do painel)
   lib/
     utils.ts            cn() (clsx + tailwind-merge)
     prisma.ts           Instância única do Prisma Client
@@ -181,9 +186,10 @@ src/
     password.ts         Hash/verificação de senha (Argon2id)
     rate-limit.ts        Limitador de tentativas em memória (login)
     active-profile-cookie.ts  Leitura/escrita do cookie de perfil ativo
-  utils/                Funções utilitárias puras, sem dependência de framework
+    require-admin.ts    Guarda de sessão/role para o painel administrativo
+  utils/                Funções utilitárias puras, sem dependência de framework (inclui slug.utils.ts, age-rating.utils.ts)
   types/                Tipos e interfaces de domínio compartilhados
-  schemas/              Esquemas de validação Zod (auth.schemas.ts, profile.schemas.ts)
+  schemas/              Esquemas de validação Zod (auth, profile, movie, series, genre)
   hooks/                Hooks React reutilizáveis entre features (ainda vazio)
   config/               Configuração da aplicação (ex.: metadados do site)
   constants/            Valores fixos (ex.: itens de navegação)
@@ -254,7 +260,19 @@ Regras seguidas na implementação:
 - Componentes de UI nunca chamam a TMDB diretamente; a única porta de entrada hoje é `GET /api/tmdb/search`, protegida por `role: ADMIN` (ainda não há painel administrativo, mas a rota já está pronta pra ele consumir).
 - Como ainda não existe nenhum usuário `ADMIN`, promova um usuário manualmente para testar: `UPDATE "User" SET role = 'ADMIN' WHERE email = 'seu-email@exemplo.com';` (via `npm run db:studio` ou `psql`).
 
-**Fora de escopo nesta etapa, de propósito:** usar esses dados para de fato criar/atualizar registros de `Movie`/`Series` no banco — isso é trabalho do painel administrativo (próxima etapa), que vai chamar `services/tmdb` para pré-preencher o formulário de cadastro.
+**Fora de escopo nesta etapa, de propósito:** usar esses dados para de fato criar/atualizar registros de `Movie`/`Series` no banco — isso é trabalho do painel administrativo (etapa seguinte), que vai chamar `services/tmdb` para pré-preencher o formulário de cadastro.
+
+### Painel administrativo
+
+Em `/admin` (protegido por `requireAdmin()` em `lib/require-admin.ts`, que redireciona pra `/login` sem sessão e pra `/` quando `role !== "ADMIN"` — checado tanto no `layout.tsx` quanto em cada Server Action, já que uma Action é invocável diretamente). CRUD completo de **filmes**, **séries** (com temporadas/episódios) e **gêneros**:
+
+- **Filmes e séries** podem ser criados manualmente ou a partir de uma busca na TMDB (`TmdbSearchPicker`, reaproveitando `GET /api/tmdb/search`) — ao escolher um resultado, o formulário é pré-preenchido via duas rotas novas (`GET /api/tmdb/movie/[tmdbId]`, `GET /api/tmdb/series/[tmdbId]`), com os mesmos dados que `services/tmdb` já expõe.
+- **Ao criar uma série a partir da TMDB, todas as temporadas e episódios são importados automaticamente** numa única Server Action (`createSeriesAction` → `series.service.ts`), buscando cada temporada sequencialmente na TMDB antes de persistir tudo de uma vez (`series.repository.ts`, uma única `prisma.series.create` com `seasons`/`episodes` aninhados).
+- **"Excluir" é desativar**: filmes e séries usam a coluna `isActive` que já existia no schema (mesma usada pelo filtro público em `content.repository.ts`) — não há hard delete. Gênero é exclusão de verdade (M:N implícito do Prisma, sem risco de cascade).
+- Gêneros vindos da TMDB ou digitados manualmente são resolvidos por `upsertGenresByName` (`genre.service.ts`), que faz upsert por slug — duas grafias do mesmo gênero (ex.: "Ficção Científica" vs "ficção científica") colapsam num único registro.
+- Slugs são gerados automaticamente na criação (`slug.utils.ts`, com sufixo numérico em caso de colisão) e ficam editáveis na edição, com validação de unicidade.
+
+**Fora de escopo nesta etapa, de propósito:** pôsteres/backdrops (a `Media` associada só existe a partir da Etapa 8, com upload real); reimportar ou editar temporadas/episódios depois que a série já foi criada (o painel não guarda o id da TMDB, então a única forma de popular temporadas é na criação); adicionar temporadas manualmente a uma série criada sem TMDB.
 
 ## Roteiro (próximas etapas)
 
@@ -263,8 +281,8 @@ Regras seguidas na implementação:
 3. ~~Home consumindo dados reais (`content.repository.ts` → Prisma → PostgreSQL)~~
 4. ~~Autenticação de usuários — cadastro, login, sessão, logout (Auth.js + Argon2)~~
 5. ~~Perfis por conta — criação (até 5), seleção de "quem está assistindo", perfil infantil restringindo o catálogo~~
-6. ~~Integração com a TMDB (`services/tmdb` + `GET /api/tmdb/search`)~~ ← etapa atual
-7. Painel administrativo (cadastro de conteúdos, temporadas, episódios, gêneros) — protegido por `role: ADMIN`, consumindo `services/tmdb` pra pré-preencher o cadastro
+6. ~~Integração com a TMDB (`services/tmdb` + `GET /api/tmdb/search`)~~
+7. ~~Painel administrativo (cadastro de filmes, séries, temporadas, episódios e gêneros) — protegido por `role: ADMIN`, consumindo `services/tmdb` pra pré-preencher o cadastro~~ ← etapa atual
 8. Uploads de mídia (capas, banners, avatars) com abstração de storage
 9. Streaming real (Range Requests / HLS)
 10. Favoritos, histórico e progresso de reprodução (por perfil)

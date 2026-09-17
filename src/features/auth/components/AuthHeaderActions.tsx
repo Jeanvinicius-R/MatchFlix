@@ -4,9 +4,14 @@ import { LogoutButton } from "@/features/auth/components/LogoutButton";
 interface AuthHeaderActionsProps {
   userName: string | null;
   profileName: string | null;
+  role: "USER" | "ADMIN" | null;
 }
 
-export function AuthHeaderActions({ userName, profileName }: AuthHeaderActionsProps) {
+export function AuthHeaderActions({
+  userName,
+  profileName,
+  role,
+}: AuthHeaderActionsProps) {
   if (!userName) {
     return (
       <Link
@@ -26,6 +31,14 @@ export function AuthHeaderActions({ userName, profileName }: AuthHeaderActionsPr
           className="text-muted-foreground hover:text-foreground hidden text-sm transition-colors sm:inline"
         >
           {profileName}
+        </Link>
+      )}
+      {role === "ADMIN" && (
+        <Link
+          href="/admin/movies"
+          className="text-muted-foreground hover:text-foreground hidden text-sm transition-colors sm:inline"
+        >
+          Painel administrativo
         </Link>
       )}
       <LogoutButton />
