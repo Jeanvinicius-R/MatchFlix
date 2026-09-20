@@ -13,6 +13,7 @@ export const MOVIE_SELECT = {
   ageRating: true,
   durationInMinutes: true,
   synopsis: true,
+  videoMediaId: true,
   genres: { select: { id: true, name: true, slug: true } },
   poster: { select: { url: true } },
   backdrop: { select: { url: true } },
@@ -29,6 +30,12 @@ export const SERIES_SELECT = {
   poster: { select: { url: true } },
   backdrop: { select: { url: true } },
   _count: { select: { seasons: true } },
+  // Only asks whether any episode has a video: one row is enough.
+  seasons: {
+    select: {
+      episodes: { where: { videoMediaId: { not: null } }, take: 1, select: { id: true } },
+    },
+  },
 } as const;
 
 /** Kids profiles only ever see content rated "L" (livre para todos os públicos). */

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
+import { LibraryLinkButton } from "@/features/admin/components/LibraryLinkButton";
 import { ToggleActiveButton } from "@/features/admin/components/ToggleActiveButton";
 import { AGE_RATING_LABELS } from "@/repositories/content.mapper";
 import { listMoviesForAdmin } from "@/services/movie.service";
@@ -13,11 +14,14 @@ export default async function AdminMoviesPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <h1 className="font-display text-foreground text-2xl font-semibold">Filmes</h1>
-        <Link href="/admin/movies/new">
-          <Button type="button">Novo filme</Button>
-        </Link>
+        <div className="flex flex-wrap items-start gap-3">
+          <LibraryLinkButton />
+          <Link href="/admin/movies/new">
+            <Button type="button">Novo filme</Button>
+          </Link>
+        </div>
       </div>
 
       {movies.length === 0 ? (

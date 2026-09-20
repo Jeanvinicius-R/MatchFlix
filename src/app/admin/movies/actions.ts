@@ -8,6 +8,10 @@ import { applyImagesSchema } from "@/schemas/content-images.schemas";
 import { attachVideoSchema } from "@/schemas/video-source.schemas";
 import { ImageSourceError } from "@/services/content-images.service";
 import {
+  linkLibraryFilesToMovies,
+  type LibraryLinkReport,
+} from "@/services/library.service";
+import {
   applyMovieImages,
   attachVideoToMovie,
   createMovie,
@@ -31,8 +35,8 @@ export async function createMovieAction(input: unknown): Promise<MovieActionStat
     return { fieldErrors: parsedInput.error.flatten().fieldErrors };
   }
 
-  await createMovie(parsedInput.data);
-  redirect("/admin/movies");
+  const movie = await createMovie(parsedInput.data);
+  redirect(`/admin/movies/${movie.id}/edit`);
 }
 
 export async function updateMovieAction(
@@ -117,4 +121,24 @@ export async function toggleMovieActiveAction(
   await requireAdmin();
   await setMovieActive(id, nextIsActive);
   revalidatePath("/admin/movies");
+}
+
+export interface LibraryLinkActionResult {
+  report?: LibraryLinkReport;
+  formError?: string;
+}
+
+export async function linkLibraryFilesAction(): Promise<LibraryLinkActionResult> {
+  await requireAdmin();
+  try {
+    const report = await linkLibraryFilesToMovies();
+    revalidatePath("/admin/movies");
+    revalidatePath("/");
+    return { report };
+  } catch {
+    return {
+      formError:
+        "Não foi possível ler a pasta de filmes. Confira MEDIA_LIBRARY_DIR no .env.",
+    };
+  }
 }

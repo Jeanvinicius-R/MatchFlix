@@ -1,5 +1,6 @@
 import { Plus } from "lucide-react";
 import Link from "next/link";
+import { withNext } from "@/lib/next-path";
 import { ProfileAvatar } from "@/features/profiles/components/ProfileAvatar";
 import type { ProfileSummary } from "@/types/profile.types";
 
@@ -7,15 +8,17 @@ const MAX_PROFILES = 5;
 
 interface ProfileGridProps {
   profiles: ProfileSummary[];
+  /** Where to go once a profile is picked (defaults to the home page). */
+  next?: string | null;
 }
 
-export function ProfileGrid({ profiles }: ProfileGridProps) {
+export function ProfileGrid({ profiles, next = null }: ProfileGridProps) {
   return (
     <div className="flex flex-wrap items-start justify-center gap-x-8 gap-y-10">
       {profiles.map((profile) => (
         <Link
           key={profile.id}
-          href={`/profiles/select/${profile.id}`}
+          href={withNext(`/profiles/select/${profile.id}`, next)}
           className="group flex flex-col items-center gap-3"
         >
           <span className="rounded-full transition-transform group-hover:scale-105">

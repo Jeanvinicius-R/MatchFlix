@@ -4,7 +4,9 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Header } from "@/components/layout/Header";
 import { FavoriteButton } from "@/features/favorites/components/FavoriteButton";
+import { MissingVideoNotice } from "@/features/watch/components/MissingVideoNotice";
 import { WatchPlayer } from "@/features/watch/components/WatchPlayer";
+import { auth } from "@/lib/auth";
 import { requireProfile } from "@/lib/require-profile";
 import { isInMyList } from "@/services/favorite.service";
 import { getMovieForPlayback } from "@/services/movie.service";
@@ -18,7 +20,8 @@ export const metadata: Metadata = { title: "Assistir" };
 
 export default async function WatchPage({ params }: WatchPageProps) {
   const { slug } = await params;
-  const profile = await requireProfile();
+  const profile = await requireProfile(`/watch/${slug}`);
+  const isAdmin = (await auth())?.user?.role === "ADMIN";
 
   const movie = await getMovieForPlayback(slug, profile.isKids);
   if (!movie) {
@@ -49,9 +52,10 @@ export default async function WatchPage({ params }: WatchPageProps) {
             resumeAt={resumeAt}
           />
         ) : (
-          <div className="border-border text-muted-foreground flex aspect-video w-full items-center justify-center rounded-lg border text-sm">
-            Este filme ainda não tem um vídeo vinculado.
-          </div>
+          <MissingVideoNotice
+            noun="filme"
+            adminEditHref={isAdmin ? `/admin/movies/${movie.id}/edit` : undefined}
+          />
         )}
 
         <div className="flex flex-col gap-2">

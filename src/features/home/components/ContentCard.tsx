@@ -32,6 +32,11 @@ export function ContentCard({ content }: ContentCardProps) {
             <Clapperboard size={40} aria-hidden="true" />
           </div>
         )}
+        {!content.hasVideo && (
+          <span className="absolute top-2 left-2 rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-medium text-white/85 backdrop-blur-sm">
+            Em breve
+          </span>
+        )}
         {/* Sem pôster o texto fica sempre visível; com pôster (que já traz o título) só ao passar o mouse. */}
         <div
           className={`absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent p-3 pt-8 transition-opacity duration-200 ${

@@ -1,4 +1,5 @@
 import { internetArchiveProvider } from "@/services/video-sources/internet-archive.provider";
+import { myFilesProvider } from "@/services/video-sources/my-files.provider";
 import type {
   VideoSourceFile,
   VideoSourceProvider,
@@ -7,6 +8,7 @@ import { wikimediaCommonsProvider } from "@/services/video-sources/wikimedia-com
 
 /** Register new sources here — nothing else in the app needs to change. */
 const PROVIDERS: VideoSourceProvider[] = [
+  myFilesProvider,
   internetArchiveProvider,
   wikimediaCommonsProvider,
 ];

@@ -1,13 +1,19 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { safeNextPath, withNext } from "@/lib/next-path";
 import { Logo } from "@/components/layout/Logo";
 import { ProfileGrid } from "@/features/profiles/components/ProfileGrid";
 import { listProfiles } from "@/services/profile.service";
 
 export const metadata: Metadata = { title: "Quem está assistindo? — MatchFlix" };
 
-export default async function ProfilesPage() {
+interface ProfilesPageProps {
+  searchParams: Promise<{ next?: string | string[] }>;
+}
+
+export default async function ProfilesPage({ searchParams }: ProfilesPageProps) {
+  const next = safeNextPath((await searchParams).next);
   const session = await auth();
   if (!session?.user) {
     redirect("/login");
@@ -20,7 +26,7 @@ export default async function ProfilesPage() {
   // The actual cookie write happens in the route handler below: cookies can
   // only be set from a Server Action or Route Handler, never during render.
   if (profiles.length === 1) {
-    redirect(`/profiles/select/${profiles[0].id}`);
+    redirect(withNext(`/profiles/select/${profiles[0].id}`, next));
   }
 
   return (
@@ -29,7 +35,7 @@ export default async function ProfilesPage() {
       <h1 className="font-display text-foreground text-2xl font-semibold sm:text-3xl">
         Quem está assistindo?
       </h1>
-      <ProfileGrid profiles={profiles} />
+      <ProfileGrid profiles={profiles} next={next} />
     </main>
   );
 }

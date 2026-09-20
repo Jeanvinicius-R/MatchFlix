@@ -7,6 +7,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { withNext } from "@/lib/next-path";
 import { signInSchema, type SignInInput } from "@/schemas/auth.schemas";
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -16,7 +17,7 @@ const ERROR_MESSAGES: Record<string, string> = {
 
 const DEFAULT_ERROR_MESSAGE = "E-mail ou senha inválidos.";
 
-export function LoginForm() {
+export function LoginForm({ next }: { next: string | null }) {
   const router = useRouter();
   const [formError, setFormError] = useState<string | null>(null);
   const {
@@ -39,7 +40,7 @@ export function LoginForm() {
       return;
     }
 
-    router.push("/profiles");
+    router.push(withNext("/profiles", next));
     router.refresh();
   });
 

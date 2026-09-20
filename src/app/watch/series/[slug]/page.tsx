@@ -4,7 +4,9 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Header } from "@/components/layout/Header";
 import { FavoriteButton } from "@/features/favorites/components/FavoriteButton";
+import { MissingVideoNotice } from "@/features/watch/components/MissingVideoNotice";
 import { WatchPlayer } from "@/features/watch/components/WatchPlayer";
+import { auth } from "@/lib/auth";
 import { requireProfile } from "@/lib/require-profile";
 import { cn } from "@/lib/utils";
 import { isInMyList } from "@/services/favorite.service";
@@ -25,7 +27,8 @@ export default async function WatchSeriesPage({
     params,
     searchParams,
   ]);
-  const profile = await requireProfile();
+  const profile = await requireProfile(`/watch/series/${slug}`);
+  const isAdmin = (await auth())?.user?.role === "ADMIN";
 
   const series = await getSeriesForPlayback(slug, profile.isKids);
   if (!series) {
@@ -95,9 +98,10 @@ export default async function WatchSeriesPage({
             )}
           </div>
         ) : (
-          <div className="border-border text-muted-foreground flex aspect-video w-full items-center justify-center rounded-lg border text-sm">
-            Esta série ainda não tem episódios com vídeo vinculado.
-          </div>
+          <MissingVideoNotice
+            noun="série"
+            adminEditHref={isAdmin ? `/admin/series/${series.id}/edit` : undefined}
+          />
         )}
 
         <div className="flex flex-col gap-2">

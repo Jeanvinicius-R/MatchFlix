@@ -19,6 +19,7 @@ interface MovieRecord {
   ageRating: PrismaAgeRating;
   durationInMinutes: number;
   synopsis: string;
+  videoMediaId: string | null;
   genres: Genre[];
   poster: MediaRef | null;
   backdrop: MediaRef | null;
@@ -35,6 +36,7 @@ interface SeriesRecord {
   poster: MediaRef | null;
   backdrop: MediaRef | null;
   _count: { seasons: number };
+  seasons: { episodes: { id: string }[] }[];
 }
 
 export const AGE_RATING_LABELS: Record<PrismaAgeRating, AgeRating> = {
@@ -56,6 +58,7 @@ export function mapMovieToContentSummary(movie: MovieRecord): ContentSummary {
     ageRating: AGE_RATING_LABELS[movie.ageRating],
     durationInMinutes: movie.durationInMinutes,
     synopsis: movie.synopsis,
+    hasVideo: movie.videoMediaId !== null,
     genres: movie.genres,
     posterUrl: movie.poster?.url,
     backdropUrl: movie.backdrop?.url,
@@ -72,6 +75,7 @@ export function mapSeriesToContentSummary(series: SeriesRecord): ContentSummary 
     ageRating: AGE_RATING_LABELS[series.ageRating],
     seasonCount: series._count.seasons,
     synopsis: series.synopsis,
+    hasVideo: series.seasons.some((season) => season.episodes.length > 0),
     genres: series.genres,
     posterUrl: series.poster?.url,
     backdropUrl: series.backdrop?.url,

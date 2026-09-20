@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
+import { safeNextPath } from "@/lib/next-path";
 import { ProfileNotOwnedError, selectProfile } from "@/services/profile.service";
 
 interface RouteContext {
@@ -30,5 +31,6 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     throw error;
   }
 
-  return NextResponse.redirect(new URL("/", request.url));
+  const next = safeNextPath(request.nextUrl.searchParams.get("next"));
+  return NextResponse.redirect(new URL(next ?? "/", request.url));
 }

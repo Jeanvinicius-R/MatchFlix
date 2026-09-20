@@ -31,8 +31,8 @@ export async function createSeriesAction(input: unknown): Promise<SeriesActionSt
     return { fieldErrors: parsedInput.error.flatten().fieldErrors };
   }
 
-  await createSeries(parsedInput.data);
-  redirect("/admin/series");
+  const series = await createSeries(parsedInput.data);
+  redirect(`/admin/series/${series.id}/edit`);
 }
 
 export async function updateSeriesAction(

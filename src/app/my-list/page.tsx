@@ -7,7 +7,7 @@ import { getMyList } from "@/services/favorite.service";
 export const metadata: Metadata = { title: "Minha lista — MatchFlix" };
 
 export default async function MyListPage() {
-  const profile = await requireProfile();
+  const profile = await requireProfile("/my-list");
   const items = await getMyList(profile.id, profile.isKids);
 
   return (
