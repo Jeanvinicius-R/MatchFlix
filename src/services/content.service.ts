@@ -31,7 +31,7 @@ export async function getHomeContentRows(kidsOnly = false): Promise<ContentRow[]
   const allContent = await findAllContent(kidsOnly);
 
   const rows: ContentRow[] = [
-    { id: "row-populares", title: "Em alta na Aurel", items: allContent },
+    { id: "row-populares", title: "Em alta na MatchFlix", items: allContent },
     { id: "row-ficcao", title: "Ficção científica", items: series },
     { id: "row-acao", title: "Ação e adrenalina", items: action },
     { id: "row-drama", title: "Dramas aclamados", items: drama },

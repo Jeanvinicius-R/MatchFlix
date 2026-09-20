@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { SignUpForm } from "@/features/auth/components/SignUpForm";
 
-export const metadata: Metadata = { title: "Criar conta — Aurel" };
+export const metadata: Metadata = { title: "Criar conta — MatchFlix" };
 
 export default function SignUpPage() {
   return (

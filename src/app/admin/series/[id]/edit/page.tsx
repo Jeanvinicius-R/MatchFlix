@@ -1,8 +1,12 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { applySeriesImagesAction } from "@/app/admin/series/actions";
+import { ContentImagesSection } from "@/features/admin/components/ContentImagesSection";
+import { SeriesEpisodesSection } from "@/features/admin/components/SeriesEpisodesSection";
 import { SeriesForm } from "@/features/admin/components/SeriesForm";
 import { listGenresForAdmin } from "@/services/genre.service";
 import { getSeriesForAdmin, SeriesNotFoundError } from "@/services/series.service";
+import { listVideoSourceProviders } from "@/services/video-sources";
 
 export const metadata: Metadata = { title: "Editar série — Painel administrativo" };
 
@@ -29,6 +33,20 @@ export default async function EditSeriesPage({ params }: EditSeriesPageProps) {
         Editar série — {series.title}
       </h1>
       <SeriesForm mode="edit" series={series} existingGenres={genres} />
+      <ContentImagesSection
+        kind="series"
+        contentId={series.id}
+        contentTitle={series.title}
+        posterUrl={series.poster?.url ?? null}
+        backdropUrl={series.backdrop?.url ?? null}
+        applyImages={applySeriesImagesAction}
+      />
+      <SeriesEpisodesSection
+        seriesId={series.id}
+        seriesTitle={series.title}
+        providers={listVideoSourceProviders().map(({ id, label }) => ({ id, label }))}
+        seasons={series.seasons}
+      />
     </div>
   );
 }

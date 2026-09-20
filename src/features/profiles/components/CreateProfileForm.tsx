@@ -43,14 +43,14 @@ export function CreateProfileForm() {
       <label className="text-foreground flex items-center gap-2 text-sm">
         <input
           type="checkbox"
-          className="accent-accent border-border h-4 w-4 rounded bg-white/5"
+          className="accent-accent border-border bg-tint/5 h-4 w-4 rounded"
           {...register("isKids")}
         />
         Perfil infantil — mostra apenas conteúdo livre para todos os públicos
       </label>
 
       {formError && (
-        <p role="alert" className="text-sm text-red-400">
+        <p role="alert" className="text-danger text-sm">
           {formError}
         </p>
       )}

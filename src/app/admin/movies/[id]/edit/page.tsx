@@ -1,8 +1,12 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { applyMovieImagesAction } from "@/app/admin/movies/actions";
+import { ContentImagesSection } from "@/features/admin/components/ContentImagesSection";
 import { MovieForm } from "@/features/admin/components/MovieForm";
+import { MovieVideoSection } from "@/features/admin/components/MovieVideoSection";
 import { listGenresForAdmin } from "@/services/genre.service";
 import { getMovieForAdmin, MovieNotFoundError } from "@/services/movie.service";
+import { listVideoSourceProviders } from "@/services/video-sources";
 
 export const metadata: Metadata = { title: "Editar filme — Painel administrativo" };
 
@@ -29,6 +33,20 @@ export default async function EditMoviePage({ params }: EditMoviePageProps) {
         Editar filme — {movie.title}
       </h1>
       <MovieForm mode="edit" movie={movie} existingGenres={genres} />
+      <ContentImagesSection
+        kind="movie"
+        contentId={movie.id}
+        contentTitle={movie.title}
+        posterUrl={movie.poster?.url ?? null}
+        backdropUrl={movie.backdrop?.url ?? null}
+        applyImages={applyMovieImagesAction}
+      />
+      <MovieVideoSection
+        movieId={movie.id}
+        movieTitle={movie.title}
+        providers={listVideoSourceProviders().map(({ id, label }) => ({ id, label }))}
+        currentVideo={movie.video}
+      />
     </div>
   );
 }

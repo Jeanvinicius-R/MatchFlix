@@ -5,7 +5,7 @@ import { Logo } from "@/components/layout/Logo";
 import { ProfileGrid } from "@/features/profiles/components/ProfileGrid";
 import { listProfiles } from "@/services/profile.service";
 
-export const metadata: Metadata = { title: "Quem está assistindo? — Aurel" };
+export const metadata: Metadata = { title: "Quem está assistindo? — MatchFlix" };
 
 export default async function ProfilesPage() {
   const session = await auth();

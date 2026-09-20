@@ -4,7 +4,19 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/require-admin";
 import { seriesFormSchema, updateSeriesFormSchema } from "@/schemas/series.schemas";
-import { createSeries, setSeriesActive, updateSeries } from "@/services/series.service";
+import { applyImagesSchema } from "@/schemas/content-images.schemas";
+import { assignEpisodeVideosSchema } from "@/schemas/video-source.schemas";
+import { ImageSourceError } from "@/services/content-images.service";
+import {
+  applySeriesImages,
+  assignEpisodeVideos,
+  createSeries,
+  removeEpisodeVideo,
+  SeriesNotFoundError,
+  setSeriesActive,
+  updateSeries,
+} from "@/services/series.service";
+import { VideoSourceError } from "@/services/video-sources/video-source.errors";
 import { SlugAlreadyInUseError } from "@/utils/slug.utils";
 
 export interface SeriesActionState {
@@ -43,6 +55,61 @@ export async function updateSeriesAction(
   }
 
   redirect("/admin/series");
+}
+
+export async function assignEpisodeVideosAction(
+  seriesId: string,
+  input: unknown,
+): Promise<SeriesActionState & { savedCount?: number }> {
+  await requireAdmin();
+  const parsedInput = assignEpisodeVideosSchema.safeParse(input);
+  if (!parsedInput.success) {
+    return { fieldErrors: parsedInput.error.flatten().fieldErrors };
+  }
+
+  try {
+    const savedCount = await assignEpisodeVideos(seriesId, parsedInput.data);
+    revalidatePath(`/admin/series/${seriesId}/edit`);
+    return { savedCount };
+  } catch (error) {
+    if (error instanceof VideoSourceError || error instanceof SeriesNotFoundError) {
+      return { formError: error.message };
+    }
+    return { formError: "Não foi possível consultar a fonte de vídeo. Tente novamente." };
+  }
+}
+
+export async function applySeriesImagesAction(
+  seriesId: string,
+  input: unknown,
+): Promise<SeriesActionState & { saved?: boolean }> {
+  await requireAdmin();
+  const parsedInput = applyImagesSchema.safeParse(input);
+  if (!parsedInput.success) {
+    return { formError: "Selecione um título da TMDB." };
+  }
+
+  try {
+    await applySeriesImages(seriesId, parsedInput.data.tmdbId);
+  } catch (error) {
+    if (error instanceof ImageSourceError || error instanceof SeriesNotFoundError) {
+      return { formError: error.message };
+    }
+    throw error;
+  }
+
+  revalidatePath(`/admin/series/${seriesId}/edit`);
+  revalidatePath("/");
+  return { saved: true };
+}
+
+export async function removeEpisodeVideoAction(
+  seriesId: string,
+  episodeId: string,
+): Promise<void> {
+  await requireAdmin();
+  await removeEpisodeVideo(seriesId, episodeId);
+  revalidatePath(`/admin/series/${seriesId}/edit`);
 }
 
 export async function toggleSeriesActiveAction(

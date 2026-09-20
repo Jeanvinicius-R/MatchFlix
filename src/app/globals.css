@@ -1,15 +1,40 @@
 @import "tailwindcss";
 
+/*
+ * Tema escuro (padrão): preto + verde. O tema claro é ativado por
+ * <html data-theme="light"> — ver ThemeSelector (Configurações) e o script em layout.tsx.
+ * Componentes só usam os tokens abaixo (bg-background, text-accent, bg-tint/5...),
+ * nunca cores fixas, para que os dois temas funcionem sem código extra.
+ */
 :root {
-  --color-background: #0a0a0b;
-  --color-surface: #18181b;
-  --color-surface-elevated: #212124;
-  --color-border: #2c2c30;
-  --color-foreground: #f5f5f4;
-  --color-muted-foreground: #a1a1aa;
-  --color-accent: #d4af6a;
-  --color-accent-strong: #e8c888;
-  --color-accent-foreground: #17130f;
+  --color-background: #070807;
+  --color-surface: #111311;
+  --color-surface-elevated: #181b18;
+  --color-border: #242924;
+  --color-foreground: #f2f5f2;
+  --color-muted-foreground: #98a29a;
+  --color-accent: #22c55e;
+  --color-accent-strong: #4ade80;
+  --color-accent-foreground: #03140a;
+  /* Cor de base para véus e realces translúcidos (bg-tint/5): branco no escuro, preto no claro. */
+  --color-tint: #ffffff;
+  /* Chama da logo: preta nos dois temas; o contorno verde a destaca no fundo escuro. */
+  --color-flame: #000000;
+  --color-danger: #f87171;
+}
+
+:root[data-theme="light"] {
+  --color-background: #ffffff;
+  --color-surface: #f5f7f5;
+  --color-surface-elevated: #ebefeb;
+  --color-border: #dde3dd;
+  --color-foreground: #0a0f0b;
+  --color-muted-foreground: #566058;
+  --color-accent: #16a34a;
+  --color-accent-strong: #15803d;
+  --color-accent-foreground: #ffffff;
+  --color-tint: #000000;
+  --color-danger: #dc2626;
 }
 
 @theme inline {
@@ -22,6 +47,9 @@
   --color-accent: var(--color-accent);
   --color-accent-strong: var(--color-accent-strong);
   --color-accent-foreground: var(--color-accent-foreground);
+  --color-tint: var(--color-tint);
+  --color-flame: var(--color-flame);
+  --color-danger: var(--color-danger);
 
   --font-sans: var(--font-inter);
   --font-display: var(--font-fraunces);
@@ -29,6 +57,10 @@
 
 html {
   color-scheme: dark;
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
 }
 
 body {

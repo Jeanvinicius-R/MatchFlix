@@ -16,7 +16,7 @@ export function ProfileAvatar({ name, isKids = false, size = "lg" }: ProfileAvat
   return (
     <div
       className={cn(
-        "font-display text-foreground relative flex items-center justify-center rounded-full bg-gradient-to-br font-semibold ring-1 ring-white/10",
+        "font-display ring-tint/10 relative flex items-center justify-center rounded-full bg-gradient-to-br font-semibold text-white ring-1",
         getAvatarGradientClass(name),
         SIZE_CLASSES[size],
       )}

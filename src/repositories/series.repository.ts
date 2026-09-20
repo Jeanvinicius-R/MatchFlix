@@ -1,5 +1,10 @@
 import type { AgeRating } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
+import {
+  createImageMedia,
+  deleteMediaIfPresent,
+  type ImageUrls,
+} from "@/repositories/media.repository";
 
 const ADMIN_SERIES_LIST_SELECT = {
   id: true,
@@ -26,6 +31,8 @@ const ADMIN_SERIES_DETAIL_SELECT = {
   ageRating: true,
   isActive: true,
   genres: { select: { id: true, name: true, slug: true } },
+  poster: { select: { url: true } },
+  backdrop: { select: { url: true } },
   createdAt: true,
   updatedAt: true,
   seasons: {
@@ -35,6 +42,15 @@ const ADMIN_SERIES_DETAIL_SELECT = {
       seasonNumber: true,
       title: true,
       _count: { select: { episodes: true } },
+      episodes: {
+        orderBy: { episodeNumber: "asc" },
+        select: {
+          id: true,
+          episodeNumber: true,
+          title: true,
+          video: { select: { fileName: true } },
+        },
+      },
     },
   },
 } as const;
@@ -129,4 +145,34 @@ export function updateSeries(
 
 export async function setSeriesActive(id: string, isActive: boolean): Promise<void> {
   await prisma.series.update({ where: { id }, data: { isActive } });
+}
+
+/** See setMovieImages: null/undefined leaves that image untouched. */
+export async function setSeriesImages(
+  seriesId: string,
+  { posterUrl, backdropUrl }: ImageUrls,
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    const current = await tx.series.findUnique({
+      where: { id: seriesId },
+      select: { posterMediaId: true, backdropMediaId: true },
+    });
+
+    if (posterUrl) {
+      const mediaId = await createImageMedia(tx, "POSTER", posterUrl);
+      await tx.series.update({
+        where: { id: seriesId },
+        data: { posterMediaId: mediaId },
+      });
+      await deleteMediaIfPresent(tx, current?.posterMediaId);
+    }
+    if (backdropUrl) {
+      const mediaId = await createImageMedia(tx, "BACKDROP", backdropUrl);
+      await tx.series.update({
+        where: { id: seriesId },
+        data: { backdropMediaId: mediaId },
+      });
+      await deleteMediaIfPresent(tx, current?.backdropMediaId);
+    }
+  });
 }

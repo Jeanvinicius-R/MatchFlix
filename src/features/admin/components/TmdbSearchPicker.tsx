@@ -79,7 +79,7 @@ export function TmdbSearchPicker({ type, onPick, disabled }: TmdbSearchPickerPro
                   onPick(result.tmdbId);
                 }}
                 className={cn(
-                  "flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors hover:bg-white/10",
+                  "hover:bg-tint/10 flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors",
                   pickedId === result.tmdbId && "bg-accent/20",
                 )}
               >
@@ -91,7 +91,7 @@ export function TmdbSearchPicker({ type, onPick, disabled }: TmdbSearchPickerPro
                     className="h-12 w-8 rounded object-cover"
                   />
                 ) : (
-                  <span className="h-12 w-8 rounded bg-white/10" />
+                  <span className="bg-tint/10 h-12 w-8 rounded" />
                 )}
                 <span className="text-foreground">
                   {result.title}

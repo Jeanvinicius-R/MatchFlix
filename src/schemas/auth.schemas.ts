@@ -29,3 +29,31 @@ export const signInSchema = z.object({
 });
 
 export type SignInInput = z.infer<typeof signInSchema>;
+
+export const updateNameSchema = z.object({
+  name: z.string().trim().min(2, "Informe seu nome completo."),
+});
+
+export const updateEmailSchema = z.object({
+  email: emailField,
+  currentPassword: z.string().min(1, "Informe sua senha atual."),
+});
+
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, "Informe sua senha atual."),
+    newPassword: z.string().min(8, "A nova senha precisa ter pelo menos 8 caracteres."),
+    confirmNewPassword: z.string(),
+  })
+  .refine((data) => data.newPassword === data.confirmNewPassword, {
+    message: "As senhas não coincidem.",
+    path: ["confirmNewPassword"],
+  })
+  .refine((data) => data.newPassword !== data.currentPassword, {
+    message: "A nova senha deve ser diferente da atual.",
+    path: ["newPassword"],
+  });
+
+export type UpdateNameInput = z.infer<typeof updateNameSchema>;
+export type UpdateEmailInput = z.infer<typeof updateEmailSchema>;
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;

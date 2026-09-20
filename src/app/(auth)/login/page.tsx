@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { LoginForm } from "@/features/auth/components/LoginForm";
 
-export const metadata: Metadata = { title: "Entrar — Aurel" };
+export const metadata: Metadata = { title: "Entrar — MatchFlix" };
 
 export default function LoginPage() {
   return (

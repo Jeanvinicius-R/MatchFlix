@@ -1,9 +1,9 @@
 const AVATAR_GRADIENTS = [
-  "from-amber-700 via-amber-900 to-black",
-  "from-teal-700 via-teal-900 to-black",
-  "from-rose-700 via-rose-900 to-black",
-  "from-indigo-700 via-indigo-900 to-black",
-  "from-emerald-700 via-emerald-900 to-black",
+  "from-green-600 via-green-900 to-black",
+  "from-emerald-600 via-emerald-900 to-black",
+  "from-lime-600 via-lime-900 to-black",
+  "from-teal-600 via-teal-900 to-black",
+  "from-neutral-600 via-neutral-800 to-black",
 ] as const;
 
 export function getAvatarGradientClass(seed: string): string {

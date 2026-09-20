@@ -25,14 +25,14 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         aria-invalid={Boolean(error)}
         aria-describedby={error ? errorId : undefined}
         className={cn(
-          "border-border text-foreground placeholder:text-muted-foreground focus:border-accent/60 rounded-md border bg-white/5 px-3 py-2 text-sm transition-colors focus:outline-none",
-          error && "border-red-500/70",
+          "border-border text-foreground placeholder:text-muted-foreground focus:border-accent/60 bg-tint/5 rounded-md border px-3 py-2 text-sm transition-colors focus:outline-none",
+          error && "border-danger/70",
           className,
         )}
         {...props}
       />
       {error && (
-        <p id={errorId} className="text-xs text-red-400">
+        <p id={errorId} className="text-danger text-xs">
           {error}
         </p>
       )}

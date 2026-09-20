@@ -37,3 +37,22 @@ interface CreateUserInput {
 export function createUser(input: CreateUserInput): Promise<{ id: string }> {
   return prisma.user.create({ data: input, select: { id: true } });
 }
+
+export function findUserById(id: string): Promise<AuthUserRecord | null> {
+  return prisma.user.findUnique({ where: { id }, select: AUTH_USER_SELECT });
+}
+
+export async function updateUserName(id: string, name: string): Promise<void> {
+  await prisma.user.update({ where: { id }, data: { name } });
+}
+
+export async function updateUserEmail(id: string, email: string): Promise<void> {
+  await prisma.user.update({ where: { id }, data: { email } });
+}
+
+export async function updateUserPasswordHash(
+  id: string,
+  passwordHash: string,
+): Promise<void> {
+  await prisma.user.update({ where: { id }, data: { passwordHash } });
+}

@@ -31,6 +31,8 @@ export const movieFormSchema = z.object({
     .min(1, "Informe a duração em minutos.")
     .max(1000, "Duração inválida."),
   genreNames: z.array(z.string().trim().min(1)).min(1, "Selecione ao menos um gênero."),
+  // Set from TmdbSearchPicker state (not an input): tells the server which TMDB title to pull images from.
+  tmdbId: z.number().int().positive().optional(),
 });
 
 export const updateMovieFormSchema = movieFormSchema.extend({

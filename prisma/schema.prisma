@@ -1,4 +1,4 @@
-// Prisma schema for Aurel.
+// Prisma schema for MatchFlix.
 // Layering: components -> services -> repositories -> Prisma (this file).
 // See README.md "Decisões arquiteturais" for the full data-flow explanation.
 
@@ -38,11 +38,17 @@ enum MediaType {
 
 // Where the referenced asset physically lives. Lets storage move from the
 // filesystem to S3/R2/MinIO later without touching the content models.
+// INTERNET_ARCHIVE / WIKIMEDIA_COMMONS / TMDB are remote references: nothing
+// is stored here and `url` points straight at the source. For videos the
+// `storageKey` is "<itemId>/<fileName>"; for TMDB images it is the image path.
 enum StorageProvider {
   LOCAL
   S3
   R2
   MINIO
+  INTERNET_ARCHIVE
+  WIKIMEDIA_COMMONS
+  TMDB
 }
 
 model User {

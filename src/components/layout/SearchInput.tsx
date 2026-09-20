@@ -14,8 +14,8 @@ export function SearchInput() {
   return (
     <label
       className={cn(
-        "border-border text-muted-foreground flex items-center gap-2 rounded-full border bg-white/5 px-3 py-2 text-sm transition-all duration-200",
-        isFocused && "border-accent/60 text-foreground bg-white/10",
+        "border-border text-muted-foreground bg-tint/5 flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-all duration-200",
+        isFocused && "border-accent/60 text-foreground bg-tint/10",
       )}
     >
       <Search size={16} aria-hidden="true" />

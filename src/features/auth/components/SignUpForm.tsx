@@ -73,7 +73,7 @@ export function SignUpForm() {
       />
 
       {formError && (
-        <p role="alert" className="text-sm text-red-400">
+        <p role="alert" className="text-danger text-sm">
           {formError}
         </p>
       )}

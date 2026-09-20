@@ -1,3 +1,4 @@
+import { Settings } from "lucide-react";
 import Link from "next/link";
 import { LogoutButton } from "@/features/auth/components/LogoutButton";
 
@@ -16,7 +17,7 @@ export function AuthHeaderActions({
     return (
       <Link
         href="/login"
-        className="text-foreground rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-white/10"
+        className="text-foreground hover:bg-tint/10 rounded-md px-3 py-2 text-sm font-medium transition-colors"
       >
         Entrar
       </Link>
@@ -41,6 +42,14 @@ export function AuthHeaderActions({
           Painel administrativo
         </Link>
       )}
+      <Link
+        href="/settings"
+        aria-label="Configurações"
+        title="Configurações"
+        className="border-border bg-surface-elevated text-muted-foreground hover:border-accent/60 hover:text-foreground flex h-9 w-9 items-center justify-center rounded-full border transition-colors"
+      >
+        <Settings size={16} aria-hidden="true" />
+      </Link>
       <LogoutButton />
     </div>
   );

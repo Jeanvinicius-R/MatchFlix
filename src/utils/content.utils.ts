@@ -33,11 +33,11 @@ export function formatSeasonCount(seasonCount: number): string {
  * exists yet. Swapped for an actual image once the media pipeline lands.
  */
 const PLACEHOLDER_GRADIENTS = [
-  "from-slate-800 via-slate-900 to-black",
-  "from-stone-800 via-neutral-900 to-black",
-  "from-indigo-950 via-slate-900 to-black",
-  "from-amber-950 via-neutral-900 to-black",
-  "from-zinc-800 via-zinc-900 to-black",
+  "from-emerald-950 via-neutral-950 to-black",
+  "from-green-950 via-zinc-950 to-black",
+  "from-neutral-800 via-neutral-950 to-black",
+  "from-teal-950 via-neutral-950 to-black",
+  "from-zinc-800 via-zinc-950 to-black",
 ] as const;
 
 export function getPlaceholderGradientClass(seed: string): string {

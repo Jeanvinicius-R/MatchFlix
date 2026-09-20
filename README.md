@@ -1,4 +1,4 @@
-# Aurel
+# MatchFlix
 
 Plataforma de streaming de filmes e séries — interface premium, arquitetura escalável e segura, construída de forma incremental.
 

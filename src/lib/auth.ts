@@ -7,7 +7,7 @@ class TooManyAttemptsSignInError extends CredentialsSignin {
   code = "too-many-attempts";
 }
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
   providers: [
@@ -34,10 +34,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    jwt({ token, user }) {
+    jwt({ token, user, trigger, session }) {
       if (user?.id) {
         token.id = user.id;
         token.role = user.role;
+      }
+      // Fired by unstable_update() after the account settings change: the JWT
+      // would otherwise keep the old name/email until the next sign-in.
+      if (trigger === "update" && session?.user) {
+        token.name = session.user.name ?? token.name;
+        token.email = session.user.email ?? token.email;
       }
       return token;
     },

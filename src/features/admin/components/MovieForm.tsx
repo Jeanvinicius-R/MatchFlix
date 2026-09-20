@@ -30,6 +30,8 @@ const AGE_RATING_OPTIONS = ["L", "10", "12", "14", "16", "18"] as const;
 
 export function MovieForm({ mode, movie, existingGenres }: MovieFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
+  // Which TMDB title the form was prefilled from; the server uses it to fetch poster/backdrop.
+  const [tmdbId, setTmdbId] = useState<number | undefined>(undefined);
 
   const defaultValues: FormValues =
     mode === "edit" && movie
@@ -75,14 +77,15 @@ export function MovieForm({ mode, movie, existingGenres }: MovieFormProps) {
     return Array.from(names);
   }, [existingGenres, watchedGenreNames]);
 
-  async function handleTmdbPick(tmdbId: number) {
+  async function handleTmdbPick(pickedTmdbId: number) {
     setFormError(null);
-    const response = await fetch(`/api/tmdb/movie/${tmdbId}`);
+    const response = await fetch(`/api/tmdb/movie/${pickedTmdbId}`);
     if (!response.ok) {
       setFormError("Não foi possível buscar os detalhes na TMDB.");
       return;
     }
     const { details } = await response.json();
+    setTmdbId(pickedTmdbId);
 
     reset({
       title: details.title,
@@ -100,7 +103,7 @@ export function MovieForm({ mode, movie, existingGenres }: MovieFormProps) {
     const result =
       mode === "edit" && movie
         ? await updateMovieAction(movie.id, data as UpdateMovieFormInput)
-        : await createMovieAction(data);
+        : await createMovieAction({ ...data, tmdbId });
 
     const firstFieldError = result.fieldErrors
       ? Object.values(result.fieldErrors)[0]?.[0]
@@ -167,7 +170,7 @@ export function MovieForm({ mode, movie, existingGenres }: MovieFormProps) {
               <input
                 type="checkbox"
                 value={name}
-                className="accent-accent border-border h-4 w-4 rounded bg-white/5"
+                className="accent-accent border-border bg-tint/5 h-4 w-4 rounded"
                 {...register("genreNames")}
               />
               {name}
@@ -175,12 +178,12 @@ export function MovieForm({ mode, movie, existingGenres }: MovieFormProps) {
           ))}
         </div>
         {errors.genreNames?.message && (
-          <p className="text-xs text-red-400">{errors.genreNames.message}</p>
+          <p className="text-danger text-xs">{errors.genreNames.message}</p>
         )}
       </fieldset>
 
       {formError && (
-        <p role="alert" className="text-sm text-red-400">
+        <p role="alert" className="text-danger text-sm">
           {formError}
         </p>
       )}

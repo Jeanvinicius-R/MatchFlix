@@ -1,15 +1,25 @@
 import {
+  clearEpisodeVideo,
+  findEpisodeIdsOfSeries,
+  setEpisodeVideos,
+} from "@/repositories/episode.repository";
+import {
   createSeriesWithSeasons,
   findAllSeriesForAdmin,
   findSeriesByIdForAdmin,
   findSeriesBySlug,
   type SeasonImportInput,
   setSeriesActive as setSeriesActiveRecord,
+  setSeriesImages,
   updateSeries as updateSeriesRecord,
 } from "@/repositories/series.repository";
 import { upsertGenresByName } from "@/services/genre.service";
 import { getSeasonDetails } from "@/services/tmdb/tmdb.service";
 import type { SeriesFormInput, UpdateSeriesFormInput } from "@/schemas/series.schemas";
+import type { AssignEpisodeVideosInput } from "@/schemas/video-source.schemas";
+import { fetchSeriesImages } from "@/services/content-images.service";
+import { getVideoSourceProvider } from "@/services/video-sources";
+import { VideoSourceError } from "@/services/video-sources/video-source.errors";
 import { mapAgeRatingLabelToEnum } from "@/utils/age-rating.utils";
 import { generateUniqueSlug, slugify, SlugAlreadyInUseError } from "@/utils/slug.utils";
 
@@ -64,7 +74,7 @@ async function importSeasonsFromTmdb(
 }
 
 export async function createSeries(input: SeriesFormInput) {
-  const [slug, genres, seasons] = await Promise.all([
+  const [slug, genres, seasons, images] = await Promise.all([
     generateUniqueSlug(input.title, async (candidate) =>
       Boolean(await findSeriesBySlug(candidate)),
     ),
@@ -72,9 +82,11 @@ export async function createSeries(input: SeriesFormInput) {
     input.tmdbId
       ? importSeasonsFromTmdb(input.tmdbId, input.tmdbSeasonNumbers ?? [])
       : Promise.resolve([]),
+    // Best effort: a TMDB hiccup must not block creating the series itself.
+    input.tmdbId ? fetchSeriesImages(input.tmdbId).catch(() => null) : null,
   ]);
 
-  return createSeriesWithSeasons({
+  const series = await createSeriesWithSeasons({
     title: input.title,
     originalTitle: input.originalTitle || null,
     synopsis: input.synopsis,
@@ -84,6 +96,11 @@ export async function createSeries(input: SeriesFormInput) {
     genreIds: genres.map((genre) => genre.id),
     seasons,
   });
+
+  if (images) {
+    await setSeriesImages(series.id, images);
+  }
+  return series;
 }
 
 export async function updateSeries(
@@ -115,4 +132,65 @@ export async function updateSeries(
 
 export async function setSeriesActive(id: string, isActive: boolean): Promise<void> {
   await setSeriesActiveRecord(id, isActive);
+}
+
+/**
+ * Links episodes of one series to files on a video source. As with movies, the
+ * client only names files; URLs come from the source's own listing. Episode ids
+ * are checked against the series so one series can never rewrite another.
+ */
+export async function assignEpisodeVideos(
+  seriesId: string,
+  input: AssignEpisodeVideosInput,
+): Promise<number> {
+  await getSeriesForAdmin(seriesId);
+
+  const provider = getVideoSourceProvider(input.provider);
+  if (!provider) {
+    throw new VideoSourceError("Fonte de vídeo desconhecida.");
+  }
+
+  const [files, validEpisodeIds] = await Promise.all([
+    provider.listFiles(input.itemId),
+    findEpisodeIdsOfSeries(seriesId),
+  ]);
+  const filesByName = new Map(files.map((file) => [file.fileName, file]));
+
+  const items = input.assignments.map(({ episodeId, fileName }) => {
+    const file = filesByName.get(fileName);
+    if (!validEpisodeIds.has(episodeId) || !file) {
+      throw new VideoSourceError("Episódio ou arquivo inválido. Recarregue a página.");
+    }
+    return {
+      episodeId,
+      video: {
+        storageProvider: provider.storageProvider,
+        storageKey: `${input.itemId}/${file.fileName}`,
+        url: file.url,
+        fileName: file.fileName,
+        mimeType: file.mimeType,
+        sizeInBytes: file.sizeInBytes,
+        durationInSeconds: file.durationInSeconds,
+      },
+    };
+  });
+
+  await setEpisodeVideos(items);
+  return items.length;
+}
+
+export async function removeEpisodeVideo(
+  seriesId: string,
+  episodeId: string,
+): Promise<void> {
+  const removed = await clearEpisodeVideo(seriesId, episodeId);
+  if (!removed) {
+    throw new VideoSourceError("Episódio não encontrado nesta série.");
+  }
+}
+
+/** Pulls the poster and backdrop of a TMDB title onto an existing series. */
+export async function applySeriesImages(seriesId: string, tmdbId: number): Promise<void> {
+  await getSeriesForAdmin(seriesId);
+  await setSeriesImages(seriesId, await fetchSeriesImages(tmdbId));
 }

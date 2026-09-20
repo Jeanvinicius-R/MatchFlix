@@ -10,7 +10,7 @@ export async function Header() {
   const activeProfile = session?.user ? await getActiveProfile(session.user.id) : null;
 
   return (
-    <header className="border-border/60 bg-background/70 fixed inset-x-0 top-0 z-50 border-b backdrop-blur-lg">
+    <header className="border-border/60 bg-background/90 fixed inset-x-0 top-0 z-50 border-b backdrop-blur-lg">
       <div className="mx-auto flex h-16 max-w-[1600px] items-center justify-between gap-6 px-4 sm:px-8">
         <div className="flex items-center gap-8">
           <Logo />

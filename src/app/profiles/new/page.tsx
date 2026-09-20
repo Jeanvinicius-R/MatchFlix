@@ -5,7 +5,7 @@ import { Logo } from "@/components/layout/Logo";
 import { CreateProfileForm } from "@/features/profiles/components/CreateProfileForm";
 import { listProfiles } from "@/services/profile.service";
 
-export const metadata: Metadata = { title: "Novo perfil — Aurel" };
+export const metadata: Metadata = { title: "Novo perfil — MatchFlix" };
 
 const MAX_PROFILES = 5;
 

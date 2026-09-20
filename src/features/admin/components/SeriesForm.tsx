@@ -192,7 +192,7 @@ export function SeriesForm({ mode, series, existingGenres }: SeriesFormProps) {
               <input
                 type="checkbox"
                 value={name}
-                className="accent-accent border-border h-4 w-4 rounded bg-white/5"
+                className="accent-accent border-border bg-tint/5 h-4 w-4 rounded"
                 {...register("genreNames")}
               />
               {name}
@@ -200,7 +200,7 @@ export function SeriesForm({ mode, series, existingGenres }: SeriesFormProps) {
           ))}
         </div>
         {errors.genreNames?.message && (
-          <p className="text-xs text-red-400">{errors.genreNames.message}</p>
+          <p className="text-danger text-xs">{errors.genreNames.message}</p>
         )}
       </fieldset>
 
@@ -228,7 +228,7 @@ export function SeriesForm({ mode, series, existingGenres }: SeriesFormProps) {
       )}
 
       {formError && (
-        <p role="alert" className="text-sm text-red-400">
+        <p role="alert" className="text-danger text-sm">
           {formError}
         </p>
       )}
