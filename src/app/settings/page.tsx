@@ -47,7 +47,7 @@ export default async function SettingsPage() {
   return (
     <>
       <Header />
-      <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 pt-24 pb-16 sm:px-8">
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 pt-28 pb-16 sm:px-8 md:pt-24">
         <h1 className="font-display text-foreground text-2xl font-semibold sm:text-3xl">
           Configurações
         </h1>
@@ -70,6 +70,20 @@ export default async function SettingsPage() {
         <SettingsSection title="Senha">
           <PasswordForm />
         </SettingsSection>
+
+        {session.user.role === "ADMIN" && (
+          <SettingsSection
+            title="Administração"
+            description="Cadastro de filmes, séries, gêneros e vídeos."
+          >
+            <Link
+              href="/admin/movies"
+              className="text-accent hover:text-accent-strong w-fit text-sm font-medium"
+            >
+              Abrir painel administrativo
+            </Link>
+          </SettingsSection>
+        )}
 
         <SettingsSection
           title="Perfis"

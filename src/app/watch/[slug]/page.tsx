@@ -3,8 +3,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Header } from "@/components/layout/Header";
+import { FavoriteButton } from "@/features/favorites/components/FavoriteButton";
 import { WatchPlayer } from "@/features/watch/components/WatchPlayer";
 import { requireProfile } from "@/lib/require-profile";
+import { isInMyList } from "@/services/favorite.service";
 import { getMovieForPlayback } from "@/services/movie.service";
 import { getMovieResumePosition } from "@/services/playback.service";
 
@@ -23,12 +25,13 @@ export default async function WatchPage({ params }: WatchPageProps) {
     notFound();
   }
 
+  const inMyList = await isInMyList(profile.id, { kind: "movie", contentId: movie.id });
   const resumeAt = movie.video ? await getMovieResumePosition(profile.id, movie.id) : 0;
 
   return (
     <>
       <Header />
-      <main className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8 sm:px-8">
+      <main className="mx-auto flex max-w-6xl flex-col gap-6 px-4 pt-28 pb-8 sm:px-8 md:pt-24">
         <Link
           href="/"
           className="text-muted-foreground hover:text-foreground inline-flex items-center gap-2 text-sm transition-colors"
@@ -61,6 +64,13 @@ export default async function WatchPage({ params }: WatchPageProps) {
           <p className="text-muted-foreground max-w-3xl text-sm leading-relaxed">
             {movie.synopsis}
           </p>
+          <div className="mt-2">
+            <FavoriteButton
+              kind="movie"
+              contentId={movie.id}
+              initialIsFavorite={inMyList}
+            />
+          </div>
         </div>
       </main>
     </>

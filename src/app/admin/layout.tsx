@@ -15,7 +15,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   return (
     <>
       <Header />
-      <main className="mx-auto flex max-w-[1200px] flex-col gap-8 px-4 pt-24 pb-16 sm:px-8">
+      <main className="mx-auto flex max-w-[1200px] flex-col gap-8 px-4 pt-28 pb-16 sm:px-8 md:pt-24">
         <nav aria-label="Painel administrativo">
           <ul className="border-border flex gap-6 border-b pb-4 text-sm">
             {ADMIN_NAV_LINKS.map((link) => (

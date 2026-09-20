@@ -1,4 +1,4 @@
-import { Settings } from "lucide-react";
+import { LayoutDashboard, Settings } from "lucide-react";
 import Link from "next/link";
 import { LogoutButton } from "@/features/auth/components/LogoutButton";
 
@@ -7,6 +7,9 @@ interface AuthHeaderActionsProps {
   profileName: string | null;
   role: "USER" | "ADMIN" | null;
 }
+
+const ROUND_BUTTON =
+  "border-border bg-surface-elevated text-muted-foreground hover:border-accent/60 hover:text-foreground flex h-9 w-9 items-center justify-center rounded-full border transition-colors";
 
 export function AuthHeaderActions({
   userName,
@@ -25,28 +28,39 @@ export function AuthHeaderActions({
   }
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-2 sm:gap-3">
       {profileName && (
         <Link
           href="/profiles"
-          className="text-muted-foreground hover:text-foreground hidden text-sm transition-colors sm:inline"
+          className="text-muted-foreground hover:text-foreground hidden text-sm transition-colors lg:inline"
         >
           {profileName}
         </Link>
       )}
       {role === "ADMIN" && (
-        <Link
-          href="/admin/movies"
-          className="text-muted-foreground hover:text-foreground hidden text-sm transition-colors sm:inline"
-        >
-          Painel administrativo
-        </Link>
+        <>
+          {/* Wide screens have room for the text; tablets get an icon; phones use Configurações. */}
+          <Link
+            href="/admin/movies"
+            className="text-muted-foreground hover:text-foreground hidden text-sm transition-colors xl:inline"
+          >
+            Painel administrativo
+          </Link>
+          <Link
+            href="/admin/movies"
+            aria-label="Painel administrativo"
+            title="Painel administrativo"
+            className={`${ROUND_BUTTON} hidden md:flex xl:hidden`}
+          >
+            <LayoutDashboard size={16} aria-hidden="true" />
+          </Link>
+        </>
       )}
       <Link
         href="/settings"
         aria-label="Configurações"
         title="Configurações"
-        className="border-border bg-surface-elevated text-muted-foreground hover:border-accent/60 hover:text-foreground flex h-9 w-9 items-center justify-center rounded-full border transition-colors"
+        className={ROUND_BUTTON}
       >
         <Settings size={16} aria-hidden="true" />
       </Link>

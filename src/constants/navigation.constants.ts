@@ -3,13 +3,10 @@ export interface NavigationLink {
   href: string;
 }
 
-/**
- * Static navigation for the primary header. Targets are placeholders
- * (`#`) until the corresponding routes exist in a later stage.
- */
+/** Primary navigation shown in the header (desktop) and under it (mobile). */
 export const PRIMARY_NAVIGATION: NavigationLink[] = [
-  { label: "Início", href: "#" },
-  { label: "Filmes", href: "#" },
-  { label: "Séries", href: "#" },
-  { label: "Minha lista", href: "#" },
+  { label: "Início", href: "/" },
+  { label: "Filmes", href: "/movies" },
+  { label: "Séries", href: "/series" },
+  { label: "Minha lista", href: "/my-list" },
 ];

@@ -3,9 +3,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Header } from "@/components/layout/Header";
+import { FavoriteButton } from "@/features/favorites/components/FavoriteButton";
 import { WatchPlayer } from "@/features/watch/components/WatchPlayer";
 import { requireProfile } from "@/lib/require-profile";
 import { cn } from "@/lib/utils";
+import { isInMyList } from "@/services/favorite.service";
 import { getSeriesForPlayback, getSeriesProgress } from "@/services/playback.service";
 
 interface WatchSeriesPageProps {
@@ -30,7 +32,10 @@ export default async function WatchSeriesPage({
     notFound();
   }
 
-  const progress = await getSeriesProgress(profile.id, series.id);
+  const [progress, inMyList] = await Promise.all([
+    getSeriesProgress(profile.id, series.id),
+    isInMyList(profile.id, { kind: "series", contentId: series.id }),
+  ]);
   const progressByEpisode = new Map(progress.map((row) => [row.episodeId, row]));
 
   const episodes = series.seasons.flatMap((season) =>
@@ -59,7 +64,7 @@ export default async function WatchSeriesPage({
   return (
     <>
       <Header />
-      <main className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8 sm:px-8">
+      <main className="mx-auto flex max-w-6xl flex-col gap-8 px-4 pt-28 pb-8 sm:px-8 md:pt-24">
         <Link
           href="/"
           className="text-muted-foreground hover:text-foreground inline-flex items-center gap-2 text-sm transition-colors"
@@ -105,6 +110,13 @@ export default async function WatchSeriesPage({
           <p className="text-muted-foreground max-w-3xl text-sm leading-relaxed">
             {series.synopsis}
           </p>
+          <div className="mt-2">
+            <FavoriteButton
+              kind="series"
+              contentId={series.id}
+              initialIsFavorite={inMyList}
+            />
+          </div>
         </div>
 
         {series.seasons.map((season) => (

@@ -1,22 +1,11 @@
-import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
 import { Header } from "@/components/layout/Header";
+import { getBrowsingContext } from "@/lib/browsing-context";
 import { HeroBanner } from "@/features/home/components/HeroBanner";
 import { ContentRow } from "@/features/home/components/ContentRow";
 import { getHeroHighlight, getHomeContentRows } from "@/services/content.service";
-import { getActiveProfile } from "@/services/profile.service";
 
 export default async function HomePage() {
-  const session = await auth();
-  let kidsOnly = false;
-
-  if (session?.user) {
-    const activeProfile = await getActiveProfile(session.user.id);
-    if (!activeProfile) {
-      redirect("/profiles");
-    }
-    kidsOnly = activeProfile.isKids;
-  }
+  const { kidsOnly } = await getBrowsingContext();
 
   const [heroContent, contentRows] = await Promise.all([
     getHeroHighlight(kidsOnly),

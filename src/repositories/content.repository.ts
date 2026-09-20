@@ -5,7 +5,7 @@ import {
   mapSeriesToContentSummary,
 } from "@/repositories/content.mapper";
 
-const MOVIE_SELECT = {
+export const MOVIE_SELECT = {
   id: true,
   slug: true,
   title: true,
@@ -18,7 +18,7 @@ const MOVIE_SELECT = {
   backdrop: { select: { url: true } },
 } as const;
 
-const SERIES_SELECT = {
+export const SERIES_SELECT = {
   id: true,
   slug: true,
   title: true,
@@ -32,7 +32,7 @@ const SERIES_SELECT = {
 } as const;
 
 /** Kids profiles only ever see content rated "L" (livre para todos os públicos). */
-function ageRatingFilterFor(kidsOnly: boolean) {
+export function ageRatingFilterFor(kidsOnly: boolean) {
   return kidsOnly ? ({ ageRating: "L" } as const) : {};
 }
 
@@ -82,6 +82,60 @@ export async function findContentByGenreSlug(
     }),
     prisma.series.findMany({
       where: { isActive: true, ...genreFilter, ...ageRatingFilter },
+      select: SERIES_SELECT,
+    }),
+  ]);
+
+  return [
+    ...movies.map(mapMovieToContentSummary),
+    ...series.map(mapSeriesToContentSummary),
+  ];
+}
+
+export async function findAllMovies(kidsOnly = false): Promise<ContentSummary[]> {
+  const movies = await prisma.movie.findMany({
+    where: { isActive: true, ...ageRatingFilterFor(kidsOnly) },
+    orderBy: { title: "asc" },
+    select: MOVIE_SELECT,
+  });
+  return movies.map(mapMovieToContentSummary);
+}
+
+export async function findAllSeries(kidsOnly = false): Promise<ContentSummary[]> {
+  const series = await prisma.series.findMany({
+    where: { isActive: true, ...ageRatingFilterFor(kidsOnly) },
+    orderBy: { title: "asc" },
+    select: SERIES_SELECT,
+  });
+  return series.map(mapSeriesToContentSummary);
+}
+
+const SEARCH_RESULT_LIMIT = 60;
+
+/** Case-insensitive match on the title or the original title, across movies and series. */
+export async function searchContent(
+  query: string,
+  kidsOnly = false,
+): Promise<ContentSummary[]> {
+  const textFilter = {
+    OR: [
+      { title: { contains: query, mode: "insensitive" as const } },
+      { originalTitle: { contains: query, mode: "insensitive" as const } },
+    ],
+  };
+  const where = { isActive: true, ...ageRatingFilterFor(kidsOnly), ...textFilter };
+
+  const [movies, series] = await Promise.all([
+    prisma.movie.findMany({
+      where,
+      orderBy: { title: "asc" },
+      take: SEARCH_RESULT_LIMIT,
+      select: MOVIE_SELECT,
+    }),
+    prisma.series.findMany({
+      where,
+      orderBy: { title: "asc" },
+      take: SEARCH_RESULT_LIMIT,
       select: SERIES_SELECT,
     }),
   ]);
