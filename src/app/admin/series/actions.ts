@@ -18,6 +18,7 @@ import {
 } from "@/services/series.service";
 import { VideoSourceError } from "@/services/video-sources/video-source.errors";
 import { SlugAlreadyInUseError } from "@/utils/slug.utils";
+import { TmdbIdAlreadyInUseError } from "@/utils/tmdb-id.utils";
 
 export interface SeriesActionState {
   formError?: string;
@@ -31,7 +32,15 @@ export async function createSeriesAction(input: unknown): Promise<SeriesActionSt
     return { fieldErrors: parsedInput.error.flatten().fieldErrors };
   }
 
-  const series = await createSeries(parsedInput.data);
+  let series;
+  try {
+    series = await createSeries(parsedInput.data);
+  } catch (error) {
+    if (error instanceof TmdbIdAlreadyInUseError) {
+      return { fieldErrors: { tmdbId: [error.message] } };
+    }
+    throw error;
+  }
   redirect(`/admin/series/${series.id}/edit`);
 }
 
@@ -50,6 +59,9 @@ export async function updateSeriesAction(
   } catch (error) {
     if (error instanceof SlugAlreadyInUseError) {
       return { fieldErrors: { slug: [error.message] } };
+    }
+    if (error instanceof TmdbIdAlreadyInUseError) {
+      return { fieldErrors: { tmdbId: [error.message] } };
     }
     throw error;
   }

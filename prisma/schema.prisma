@@ -127,6 +127,7 @@ model Media {
 model Movie {
   id                String    @id @default(uuid()) @db.Uuid
   slug              String    @unique
+  tmdbId            Int?      @unique
   title             String
   originalTitle     String?
   synopsis          String
@@ -155,6 +156,7 @@ model Movie {
 model Series {
   id              String    @id @default(uuid()) @db.Uuid
   slug            String    @unique
+  tmdbId          Int?      @unique
   title           String
   originalTitle   String?
   synopsis        String

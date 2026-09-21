@@ -4,6 +4,7 @@ import {
   findAllMoviesForAdmin,
   findMovieByIdForAdmin,
   findMovieBySlug,
+  findMovieByTmdbId,
   findMovieForPlaybackBySlug,
   setMovieActive as setMovieActiveRecord,
   setMovieImages,
@@ -18,6 +19,7 @@ import { getVideoSourceProvider } from "@/services/video-sources";
 import { VideoSourceError } from "@/services/video-sources/video-source.errors";
 import { mapAgeRatingLabelToEnum } from "@/utils/age-rating.utils";
 import { generateUniqueSlug, slugify, SlugAlreadyInUseError } from "@/utils/slug.utils";
+import { TmdbIdAlreadyInUseError } from "@/utils/tmdb-id.utils";
 
 export class MovieNotFoundError extends Error {
   constructor() {
@@ -38,7 +40,19 @@ export async function getMovieForAdmin(id: string) {
   return movie;
 }
 
+async function assertTmdbIdAvailable(tmdbId: number | undefined, movieId?: string) {
+  if (!tmdbId) {
+    return;
+  }
+  const owner = await findMovieByTmdbId(tmdbId);
+  if (owner && owner.id !== movieId) {
+    throw new TmdbIdAlreadyInUseError();
+  }
+}
+
 export async function createMovie(input: MovieFormInput) {
+  await assertTmdbIdAvailable(input.tmdbId);
+
   const [slug, genres, images] = await Promise.all([
     generateUniqueSlug(input.title, async (candidate) =>
       Boolean(await findMovieBySlug(candidate)),
@@ -55,6 +69,7 @@ export async function createMovie(input: MovieFormInput) {
     releaseYear: input.releaseYear,
     ageRating: mapAgeRatingLabelToEnum(input.ageRating),
     durationInMinutes: input.durationInMinutes,
+    tmdbId: input.tmdbId ?? null,
     slug,
     genreIds: genres.map((genre) => genre.id),
   });
@@ -79,6 +94,8 @@ export async function updateMovie(
     }
   }
 
+  await assertTmdbIdAvailable(input.tmdbId, id);
+
   const genres = await upsertGenresByName(input.genreNames);
 
   await updateMovieRecord(id, {
@@ -88,6 +105,7 @@ export async function updateMovie(
     releaseYear: input.releaseYear,
     ageRating: mapAgeRatingLabelToEnum(input.ageRating),
     durationInMinutes: input.durationInMinutes,
+    tmdbId: input.tmdbId ?? undefined,
     slug: nextSlug,
     genreIds: genres.map((genre) => genre.id),
   });

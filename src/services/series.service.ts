@@ -8,6 +8,7 @@ import {
   findAllSeriesForAdmin,
   findSeriesByIdForAdmin,
   findSeriesBySlug,
+  findSeriesByTmdbId,
   type SeasonImportInput,
   setSeriesActive as setSeriesActiveRecord,
   setSeriesImages,
@@ -22,6 +23,7 @@ import { getVideoSourceProvider } from "@/services/video-sources";
 import { VideoSourceError } from "@/services/video-sources/video-source.errors";
 import { mapAgeRatingLabelToEnum } from "@/utils/age-rating.utils";
 import { generateUniqueSlug, slugify, SlugAlreadyInUseError } from "@/utils/slug.utils";
+import { TmdbIdAlreadyInUseError } from "@/utils/tmdb-id.utils";
 
 export class SeriesNotFoundError extends Error {
   constructor() {
@@ -73,7 +75,19 @@ async function importSeasonsFromTmdb(
   return seasons;
 }
 
+async function assertTmdbIdAvailable(tmdbId: number | undefined, seriesId?: string) {
+  if (!tmdbId) {
+    return;
+  }
+  const owner = await findSeriesByTmdbId(tmdbId);
+  if (owner && owner.id !== seriesId) {
+    throw new TmdbIdAlreadyInUseError();
+  }
+}
+
 export async function createSeries(input: SeriesFormInput) {
+  await assertTmdbIdAvailable(input.tmdbId);
+
   const [slug, genres, seasons, images] = await Promise.all([
     generateUniqueSlug(input.title, async (candidate) =>
       Boolean(await findSeriesBySlug(candidate)),
@@ -92,6 +106,7 @@ export async function createSeries(input: SeriesFormInput) {
     synopsis: input.synopsis,
     releaseYear: input.releaseYear,
     ageRating: mapAgeRatingLabelToEnum(input.ageRating),
+    tmdbId: input.tmdbId ?? null,
     slug,
     genreIds: genres.map((genre) => genre.id),
     seasons,
@@ -117,6 +132,8 @@ export async function updateSeries(
     }
   }
 
+  await assertTmdbIdAvailable(input.tmdbId, id);
+
   const genres = await upsertGenresByName(input.genreNames);
 
   await updateSeriesRecord(id, {
@@ -125,6 +142,7 @@ export async function updateSeries(
     synopsis: input.synopsis,
     releaseYear: input.releaseYear,
     ageRating: mapAgeRatingLabelToEnum(input.ageRating),
+    tmdbId: input.tmdbId,
     slug: nextSlug,
     genreIds: genres.map((genre) => genre.id),
   });

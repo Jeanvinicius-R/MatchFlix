@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Header } from "@/components/layout/Header";
+import EpisodePlayback from "@/components/playback/EpisodePlayback";
 import { FavoriteButton } from "@/features/favorites/components/FavoriteButton";
 import { MissingVideoNotice } from "@/features/watch/components/MissingVideoNotice";
 import { WatchPlayer } from "@/features/watch/components/WatchPlayer";
@@ -44,7 +45,9 @@ export default async function WatchSeriesPage({
   const episodes = series.seasons.flatMap((season) =>
     season.episodes.map((episode) => ({ ...episode, seasonNumber: season.seasonNumber })),
   );
-  const playable = episodes.filter((episode) => episode.video);
+  // With a TMDB id every episode can be played through the playback providers;
+  // without one, only episodes that have a linked video file can.
+  const playable = episodes.filter((episode) => episode.video || series.tmdbId);
 
   // Explicit choice > continue where the profile stopped > first episode with a video.
   const requested = playable.find((episode) => episode.id === requestedEpisodeId);
@@ -76,18 +79,27 @@ export default async function WatchSeriesPage({
           Voltar
         </Link>
 
-        {current?.video ? (
+        {current ? (
           <div className="flex flex-col gap-3">
-            <WatchPlayer
-              key={current.id}
-              src={current.video.url}
-              mimeType={current.video.mimeType}
-              poster={series.backdrop?.url ?? series.poster?.url}
-              target={{ kind: "episode", contentId: current.id }}
-              resumeAt={resumeAt}
-              autoPlay={auto === "1"}
-              nextHref={next ? episodeHref(next.id, true) : undefined}
-            />
+            {current.video ? (
+              <WatchPlayer
+                key={current.id}
+                src={current.video.url}
+                mimeType={current.video.mimeType}
+                poster={series.backdrop?.url ?? series.poster?.url}
+                target={{ kind: "episode", contentId: current.id }}
+                resumeAt={resumeAt}
+                autoPlay={auto === "1"}
+                nextHref={next ? episodeHref(next.id, true) : undefined}
+              />
+            ) : (
+              <EpisodePlayback
+                key={current.id}
+                tmdbId={series.tmdbId!}
+                season={current.seasonNumber}
+                episode={current.episodeNumber}
+              />
+            )}
             <p className="text-foreground text-sm font-medium">
               T{current.seasonNumber} · E{current.episodeNumber} — {current.title}
             </p>
@@ -142,7 +154,7 @@ export default async function WatchSeriesPage({
                     {status && (
                       <span className="text-accent shrink-0 text-xs">{status}</span>
                     )}
-                    {!episode.video && (
+                    {!episode.video && !series.tmdbId && (
                       <span className="text-muted-foreground shrink-0 text-xs">
                         sem vídeo
                       </span>
@@ -152,7 +164,7 @@ export default async function WatchSeriesPage({
 
                 return (
                   <li key={episode.id}>
-                    {episode.video ? (
+                    {episode.video || series.tmdbId ? (
                       <Link
                         href={episodeHref(episode.id)}
                         className={cn(

@@ -18,7 +18,7 @@ import {
   type UpdateSeriesFormInput,
 } from "@/schemas/series.schemas";
 
-type FormValues = Omit<SeriesFormInput, "tmdbId" | "tmdbSeasonNumbers"> & {
+type FormValues = Omit<SeriesFormInput, "tmdbSeasonNumbers"> & {
   slug?: string;
 };
 
@@ -47,6 +47,7 @@ export function SeriesForm({ mode, series, existingGenres }: SeriesFormProps) {
           releaseYear: series.releaseYear,
           ageRating: AGE_RATING_LABELS[series.ageRating],
           genreNames: series.genres.map((genre) => genre.name),
+          tmdbId: series.tmdbId ?? undefined,
           slug: series.slug,
         }
       : {
@@ -96,6 +97,7 @@ export function SeriesForm({ mode, series, existingGenres }: SeriesFormProps) {
       releaseYear: details.releaseYear ?? undefined,
       ageRating: details.ageRating ?? undefined,
       genreNames: details.genreNames ?? [],
+      tmdbId,
     } as FormValues);
 
     setTmdbImport({
@@ -117,8 +119,11 @@ export function SeriesForm({ mode, series, existingGenres }: SeriesFormProps) {
         ? await updateSeriesAction(series.id, data as UpdateSeriesFormInput)
         : await createSeriesAction({
             ...data,
-            tmdbId: tmdbImport?.tmdbId,
-            tmdbSeasonNumbers: tmdbImport?.seasonNumbers,
+            // Seasons only make sense for the title they were fetched from.
+            tmdbSeasonNumbers:
+              tmdbImport && tmdbImport.tmdbId === data.tmdbId
+                ? tmdbImport.seasonNumbers
+                : undefined,
           });
 
     const firstFieldError = result.fieldErrors
@@ -179,6 +184,13 @@ export function SeriesForm({ mode, series, existingGenres }: SeriesFormProps) {
           ))}
         </Select>
       </div>
+
+      <Input
+        label="TMDB ID (opcional)"
+        type="number"
+        error={errors.tmdbId?.message}
+        {...register("tmdbId")}
+      />
 
       {mode === "edit" && (
         <Input label="Slug" error={errors.slug?.message} {...register("slug")} />

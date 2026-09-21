@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 const SERIES_PLAYBACK_SELECT = {
   id: true,
   slug: true,
+  tmdbId: true,
   title: true,
   synopsis: true,
   releaseYear: true,

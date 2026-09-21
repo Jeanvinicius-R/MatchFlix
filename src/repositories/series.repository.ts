@@ -24,6 +24,7 @@ const ADMIN_SERIES_LIST_SELECT = {
 const ADMIN_SERIES_DETAIL_SELECT = {
   id: true,
   slug: true,
+  tmdbId: true,
   title: true,
   originalTitle: true,
   synopsis: true,
@@ -96,12 +97,17 @@ export function findSeriesBySlug(slug: string) {
   return prisma.series.findUnique({ where: { slug }, select: { id: true } });
 }
 
+export function findSeriesByTmdbId(tmdbId: number) {
+  return prisma.series.findUnique({ where: { tmdbId }, select: { id: true } });
+}
+
 /** One prisma.series.create call with nested seasons/episodes — no per-season round trip against the DB. */
 export function createSeriesWithSeasons(
   data: SeriesScalarInput & {
     slug: string;
     genreIds: string[];
     seasons: SeasonImportInput[];
+    tmdbId: number | null;
   },
 ) {
   const { genreIds, seasons, ...scalars } = data;
@@ -133,7 +139,12 @@ export function createSeriesWithSeasons(
 /** Series-level fields only — seasons/episodes are never touched here (see README limitation). */
 export function updateSeries(
   id: string,
-  data: SeriesScalarInput & { slug: string; genreIds: string[] },
+  data: SeriesScalarInput & {
+    slug: string;
+    genreIds: string[];
+    /** undefined leaves the stored tmdbId untouched. */
+    tmdbId?: number;
+  },
 ) {
   const { genreIds, ...scalars } = data;
   return prisma.series.update({

@@ -22,6 +22,7 @@ import {
 } from "@/services/movie.service";
 import { VideoSourceError } from "@/services/video-sources/video-source.errors";
 import { SlugAlreadyInUseError } from "@/utils/slug.utils";
+import { TmdbIdAlreadyInUseError } from "@/utils/tmdb-id.utils";
 
 export interface MovieActionState {
   formError?: string;
@@ -35,7 +36,15 @@ export async function createMovieAction(input: unknown): Promise<MovieActionStat
     return { fieldErrors: parsedInput.error.flatten().fieldErrors };
   }
 
-  const movie = await createMovie(parsedInput.data);
+  let movie;
+  try {
+    movie = await createMovie(parsedInput.data);
+  } catch (error) {
+    if (error instanceof TmdbIdAlreadyInUseError) {
+      return { fieldErrors: { tmdbId: [error.message] } };
+    }
+    throw error;
+  }
   redirect(`/admin/movies/${movie.id}/edit`);
 }
 
@@ -54,6 +63,9 @@ export async function updateMovieAction(
   } catch (error) {
     if (error instanceof SlugAlreadyInUseError) {
       return { fieldErrors: { slug: [error.message] } };
+    }
+    if (error instanceof TmdbIdAlreadyInUseError) {
+      return { fieldErrors: { tmdbId: [error.message] } };
     }
     throw error;
   }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { optionalTmdbIdSchema } from "@/schemas/tmdb-id.schemas";
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -31,8 +32,8 @@ export const movieFormSchema = z.object({
     .min(1, "Informe a duração em minutos.")
     .max(1000, "Duração inválida."),
   genreNames: z.array(z.string().trim().min(1)).min(1, "Selecione ao menos um gênero."),
-  // Set from TmdbSearchPicker state (not an input): tells the server which TMDB title to pull images from.
-  tmdbId: z.number().int().positive().optional(),
+  // Filled by TmdbSearchPicker or typed by the admin; also tells the server which TMDB title to pull images from.
+  tmdbId: optionalTmdbIdSchema,
 });
 
 export const updateMovieFormSchema = movieFormSchema.extend({

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Header } from "@/components/layout/Header";
+import MoviePlayback from "@/components/playback/MoviePlayback";
 import { FavoriteButton } from "@/features/favorites/components/FavoriteButton";
 import { MissingVideoNotice } from "@/features/watch/components/MissingVideoNotice";
 import { WatchPlayer } from "@/features/watch/components/WatchPlayer";
@@ -51,6 +52,8 @@ export default async function WatchPage({ params }: WatchPageProps) {
             target={{ kind: "movie", contentId: movie.id }}
             resumeAt={resumeAt}
           />
+        ) : movie.tmdbId ? (
+          <MoviePlayback tmdbId={movie.tmdbId} />
         ) : (
           <MissingVideoNotice
             noun="filme"

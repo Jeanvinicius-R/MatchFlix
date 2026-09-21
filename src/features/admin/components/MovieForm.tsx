@@ -30,8 +30,6 @@ const AGE_RATING_OPTIONS = ["L", "10", "12", "14", "16", "18"] as const;
 
 export function MovieForm({ mode, movie, existingGenres }: MovieFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
-  // Which TMDB title the form was prefilled from; the server uses it to fetch poster/backdrop.
-  const [tmdbId, setTmdbId] = useState<number | undefined>(undefined);
 
   const defaultValues: FormValues =
     mode === "edit" && movie
@@ -43,6 +41,7 @@ export function MovieForm({ mode, movie, existingGenres }: MovieFormProps) {
           ageRating: AGE_RATING_LABELS[movie.ageRating],
           durationInMinutes: movie.durationInMinutes,
           genreNames: movie.genres.map((genre) => genre.name),
+          tmdbId: movie.tmdbId ?? undefined,
           slug: movie.slug,
         }
       : {
@@ -85,7 +84,6 @@ export function MovieForm({ mode, movie, existingGenres }: MovieFormProps) {
       return;
     }
     const { details } = await response.json();
-    setTmdbId(pickedTmdbId);
 
     reset({
       title: details.title,
@@ -95,6 +93,7 @@ export function MovieForm({ mode, movie, existingGenres }: MovieFormProps) {
       ageRating: details.ageRating ?? undefined,
       durationInMinutes: details.durationInMinutes ?? undefined,
       genreNames: details.genreNames ?? [],
+      tmdbId: pickedTmdbId,
     } as FormValues);
   }
 
@@ -103,7 +102,7 @@ export function MovieForm({ mode, movie, existingGenres }: MovieFormProps) {
     const result =
       mode === "edit" && movie
         ? await updateMovieAction(movie.id, data as UpdateMovieFormInput)
-        : await createMovieAction({ ...data, tmdbId });
+        : await createMovieAction(data);
 
     const firstFieldError = result.fieldErrors
       ? Object.values(result.fieldErrors)[0]?.[0]
@@ -157,6 +156,13 @@ export function MovieForm({ mode, movie, existingGenres }: MovieFormProps) {
           {...register("durationInMinutes")}
         />
       </div>
+
+      <Input
+        label="TMDB ID (opcional)"
+        type="number"
+        error={errors.tmdbId?.message}
+        {...register("tmdbId")}
+      />
 
       {mode === "edit" && (
         <Input label="Slug" error={errors.slug?.message} {...register("slug")} />

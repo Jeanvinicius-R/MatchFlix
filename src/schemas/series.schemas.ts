@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { optionalTmdbIdSchema } from "@/schemas/tmdb-id.schemas";
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -28,17 +29,19 @@ const seriesScalarFields = {
   genreNames: z.array(z.string().trim().min(1)).min(1, "Selecione ao menos um gênero."),
 };
 
-// tmdbId/tmdbSeasonNumbers only exist on create — set from TmdbSearchPicker state, not
-// rendered as inputs — and tell createSeriesAction whether/what to import from TMDB.
+// tmdbSeasonNumbers only exists on create — set from TmdbSearchPicker state, not rendered
+// as an input — and tells createSeriesAction which seasons to import from TMDB.
 export const seriesFormSchema = z.object({
   ...seriesScalarFields,
-  tmdbId: z.number().int().positive().optional(),
+  tmdbId: optionalTmdbIdSchema,
   tmdbSeasonNumbers: z.array(z.number().int().positive()).optional(),
 });
 
-// Edit is series-level only (see README limitation) — no tmdbId/tmdbSeasonNumbers.
+// Edit is series-level only (see README limitation) — no tmdbSeasonNumbers. tmdbId can be
+// set/changed here; leaving it empty keeps the stored value.
 export const updateSeriesFormSchema = z.object({
   ...seriesScalarFields,
+  tmdbId: optionalTmdbIdSchema,
   slug: z
     .string()
     .trim()

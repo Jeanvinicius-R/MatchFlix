@@ -11,6 +11,7 @@ import {
 const ADMIN_MOVIE_SELECT = {
   id: true,
   slug: true,
+  tmdbId: true,
   title: true,
   originalTitle: true,
   synopsis: true,
@@ -29,6 +30,7 @@ const ADMIN_MOVIE_SELECT = {
 const PLAYBACK_MOVIE_SELECT = {
   id: true,
   slug: true,
+  tmdbId: true,
   title: true,
   synopsis: true,
   releaseYear: true,
@@ -65,8 +67,16 @@ export function findMovieBySlug(slug: string) {
   return prisma.movie.findUnique({ where: { slug }, select: { id: true } });
 }
 
+export function findMovieByTmdbId(tmdbId: number) {
+  return prisma.movie.findUnique({ where: { tmdbId }, select: { id: true } });
+}
+
 export function createMovie(
-  data: MovieScalarInput & { slug: string; genreIds: string[] },
+  data: MovieScalarInput & {
+    slug: string;
+    genreIds: string[];
+    tmdbId: number | null;
+  },
 ) {
   const { genreIds, ...scalars } = data;
   return prisma.movie.create({
@@ -77,7 +87,11 @@ export function createMovie(
 
 export function updateMovie(
   id: string,
-  data: MovieScalarInput & { slug: string; genreIds: string[] },
+  data: MovieScalarInput & {
+    slug: string;
+    genreIds: string[];
+    tmdbId?: number;
+  },
 ) {
   const { genreIds, ...scalars } = data;
   return prisma.movie.update({
