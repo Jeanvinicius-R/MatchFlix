@@ -1,5 +1,12 @@
-# Banco de dados local para desenvolvimento. A aplicação em si ainda roda
-# fora de container nesta etapa (ver README, seção Docker).
+# "postgres": banco local opcional, só para quem não usa o Neon (ver
+# .env.example). Este projeto roda com o Neon — este serviço fica parado
+# a menos que você rode `docker compose up postgres` explicitamente.
+#
+# "app": a aplicação MatchFlix em si (Dockerfile na raiz), lendo o .env.
+#
+# "cloudflared": túnel público gratuito (Cloudflare Quick Tunnel) apontando
+# pro serviço "app" — dá uma URL *.trycloudflare.com temporária, sem precisar
+# de conta nem domínio. Veja a URL com: docker compose logs cloudflared
 services:
   postgres:
     image: postgres:16-alpine
@@ -17,6 +24,26 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      # Porta 3001 no host só pra testes locais (curl/navegador); o túnel
+      # Cloudflare acessa o container direto pela rede interna do compose
+      # (http://app:3000), sem depender desta publicação de porta.
+      - "3001:3000"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --url http://app:3000
+    depends_on:
+      - app
 
 volumes:
   aurel_postgres_data:

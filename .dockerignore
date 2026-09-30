@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+.gitignore
+npm-debug.log*
+
+# Segredos — nunca entram na imagem; em runtime o compose injeta via env_file.
+.env
+.env.local
+.env.*.local
+
+.vscode
+*.md
+!README.md
+.dev-server.log
