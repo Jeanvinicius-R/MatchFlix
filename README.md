@@ -146,6 +146,31 @@ Depois de logar, cada conta escolhe (ou cria) um **perfil** — até **5 por con
 | `npm run db:deploy`    | Aplica migrations existentes (uso em produção) |
 | `npm run db:studio`    | Abre o Prisma Studio                           |
 | `npm run db:seed`      | Popula o banco com dados de exemplo            |
+| `npm run docker:up`    | Sobe a aplicação em Docker + túnel público      |
+| `npm run docker:url`   | Imprime a URL pública atual do túnel            |
+
+## Deploy com Docker + túnel público
+
+Sobe a aplicação dentro de um container e expõe ela publicamente através de
+um túnel da Cloudflare — sem precisar abrir porta no roteador, ter IP fixo
+ou (nesse modo) nem conta/domínio.
+
+```bash
+docker compose build app   # builda a imagem (Dockerfile na raiz)
+npm run docker:up          # sobe os serviços "app" e "cloudflared"
+npm run docker:url         # imprime a URL pública atual
+```
+
+> **Importante**: o túnel usado é o "Quick Tunnel" da Cloudflare — gratuito e
+> sem cadastro, mas **a URL muda toda vez que o container `cloudflared` é
+> recriado** (não muda só por reiniciar o processo dentro do mesmo
+> container). Sempre use `npm run docker:url` pra pegar a URL atual em vez de
+> guardar a antiga. Para uma URL fixa permanente, seria necessário um túnel
+> nomeado da Cloudflare, o que exige conta + domínio próprio.
+
+O banco continua sendo o Neon (`DATABASE_URL` no `.env`) — este Docker não
+sobe Postgres; o serviço `postgres` do `docker-compose.yml` é só uma opção
+local para quem não usa Neon (veja "Banco de dados" acima).
 
 ## Estrutura de diretórios
 
