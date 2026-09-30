@@ -1,4 +1,4 @@
-export type PlaybackType = "iframe" | "hls" | "direct";
+export type PlaybackType = "iframe" | "hls" | "direct" | "external";
 
 export interface PlaybackSource {
   id: string;
@@ -6,6 +6,8 @@ export interface PlaybackSource {
   type: PlaybackType;
   url: string;
   label?: string;
+  /** Free-form quality hint (e.g. "1080p", "HD") — optional, not enforced. */
+  quality?: string;
 }
 
 export interface PlaybackContext {

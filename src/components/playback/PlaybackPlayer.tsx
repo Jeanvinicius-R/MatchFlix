@@ -2,12 +2,23 @@
 
 import { Maximize, Minimize } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { buttonStyles } from "@/components/ui/Button";
 import type { PlaybackSource } from "@/services/playback/playback.types";
 
-// The Fullscreen API never changes at runtime; on the server it is reported as unavailable.
+// Both checks below never change at runtime; on the server they are reported
+// as unavailable (there is no window/document to ask).
 const subscribeToNothing = () => () => {};
 const getFullscreenSupport = () => document.fullscreenEnabled;
 const getServerFullscreenSupport = () => false;
+
+/**
+ * Native HLS playback only works where the browser itself understands the
+ * format (Safari/iOS). Everywhere else this reports false — playing HLS
+ * there needs a library like hls.js, not installed in this phase.
+ */
+const getHlsSupport = () =>
+  document.createElement("video").canPlayType("application/vnd.apple.mpegurl") !== "";
+const getServerHlsSupport = () => false;
 
 interface PlaybackPlayerProps {
   source: PlaybackSource;
@@ -26,6 +37,11 @@ export default function PlaybackPlayer({ source }: PlaybackPlayerProps) {
     subscribeToNothing,
     getFullscreenSupport,
     getServerFullscreenSupport,
+  );
+  const supportsHls = useSyncExternalStore(
+    subscribeToNothing,
+    getHlsSupport,
+    getServerHlsSupport,
   );
 
   useEffect(() => {
@@ -67,6 +83,45 @@ export default function PlaybackPlayer({ source }: PlaybackPlayerProps) {
           allowFullScreen
           referrerPolicy="no-referrer"
         />
+      ) : source.type === "direct" ? (
+        <video
+          key={source.id}
+          src={source.url}
+          controls
+          playsInline
+          className="h-full w-full"
+        />
+      ) : source.type === "hls" ? (
+        supportsHls ? (
+          // Native support only (Safari/iOS). Other browsers need hls.js,
+          // not installed yet — see the phase 1 report.
+          <video
+            key={source.id}
+            src={source.url}
+            controls
+            playsInline
+            className="h-full w-full"
+          />
+        ) : (
+          <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-center text-white">
+            <p>Este navegador não sabe tocar este vídeo (HLS) nativamente.</p>
+            <p className="text-muted-foreground text-sm">
+              Tente no Safari/iOS, ou peça outra fonte abaixo.
+            </p>
+          </div>
+        )
+      ) : source.type === "external" ? (
+        <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-center text-white">
+          <p>Esta fonte não pode ser exibida aqui dentro.</p>
+          <a
+            href={source.url}
+            target="_blank"
+            rel="noreferrer noopener"
+            className={buttonStyles("primary")}
+          >
+            Assistir no serviço
+          </a>
+        </div>
       ) : (
         <div className="flex h-full w-full items-center justify-center text-white">
           <p>Tipo de fonte ainda não suportado.</p>
