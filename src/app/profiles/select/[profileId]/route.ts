@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
-import { safeNextPath } from "@/lib/next-path";
+import { getRequestOrigin, safeNextPath } from "@/lib/next-path";
 import { ProfileNotOwnedError, selectProfile } from "@/services/profile.service";
 
 interface RouteContext {
@@ -15,9 +15,11 @@ interface RouteContext {
  * (the "only one profile" auto-select in /profiles).
  */
 export async function GET(request: NextRequest, { params }: RouteContext) {
+  const origin = getRequestOrigin(request);
+
   const session = await auth();
   if (!session?.user) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return NextResponse.redirect(new URL("/login", origin));
   }
 
   const { profileId } = await params;
@@ -26,11 +28,11 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     await selectProfile(session.user.id, profileId);
   } catch (error) {
     if (error instanceof ProfileNotOwnedError) {
-      return NextResponse.redirect(new URL("/profiles", request.url));
+      return NextResponse.redirect(new URL("/profiles", origin));
     }
     throw error;
   }
 
   const next = safeNextPath(request.nextUrl.searchParams.get("next"));
-  return NextResponse.redirect(new URL(next ?? "/", request.url));
+  return NextResponse.redirect(new URL(next ?? "/", origin));
 }
