@@ -7,7 +7,9 @@ databases:
   - name: matchflix-db
     databaseName: matchflix
     user: matchflix
-    plan: basic-256mb
+    # Grátis, mas expira em 30 dias (apaga os dados) — troque para um plano
+    # pago (ex.: "0.1c-256mb") no painel do Render quando for pra valer.
+    plan: free
     region: oregon
 
 services:
@@ -16,7 +18,10 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    plan: starter
+    # Grátis, mas "dorme" após 15 min sem acesso (o próximo acesso demora
+    # alguns segundos pra acordar). Troque para "0.5c-512mb" (pago) no
+    # painel do Render pra tirar esse delay.
+    plan: free
     region: oregon
     # "/login" não depende do banco ter conteúdo cadastrado — diferente da
     # Home ("/"), que falha antes da primeira migration + cadastro de título.
