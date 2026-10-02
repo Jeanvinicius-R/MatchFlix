@@ -4,13 +4,11 @@ import { createPlaybackResolver } from "./playback.resolver";
 import { authorizedProvider } from "./providers/authorized.provider";
 import { exampleProvider } from "./providers/example.provider";
 import { internetArchiveProvider } from "./providers/internet-archive.provider";
-import { testProvider } from "./providers/test.provider";
 
 const providers: PlaybackProvider[] = [
   authorizedProvider,
   exampleProvider,
   internetArchiveProvider,
-  testProvider,
 ];
 
 const resolver = createPlaybackResolver(providers);

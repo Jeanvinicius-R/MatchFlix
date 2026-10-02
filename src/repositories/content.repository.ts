@@ -117,6 +117,52 @@ export async function findAllSeries(kidsOnly = false): Promise<ContentSummary[]>
   return series.map(mapSeriesToContentSummary);
 }
 
+const CONTINUE_WATCHING_LIMIT = 20;
+
+/**
+ * One item per unfinished title, most recently watched first. A series
+ * collapses to a single entry (its most recent episode in progress) even
+ * if several episodes have progress rows — the row links to the series,
+ * which already resumes from the right episode on its own.
+ */
+export async function findContinueWatching(
+  profileId: string,
+  kidsOnly = false,
+): Promise<ContentSummary[]> {
+  const ageRatingFilter = ageRatingFilterFor(kidsOnly);
+
+  const progress = await prisma.watchProgress.findMany({
+    where: {
+      profileId,
+      completed: false,
+      OR: [
+        { movie: { isActive: true, ...ageRatingFilter } },
+        { episode: { season: { series: { isActive: true, ...ageRatingFilter } } } },
+      ],
+    },
+    orderBy: { updatedAt: "desc" },
+    take: CONTINUE_WATCHING_LIMIT,
+    select: {
+      movie: { select: MOVIE_SELECT },
+      episode: { select: { season: { select: { series: { select: SERIES_SELECT } } } } },
+    },
+  });
+
+  const items: ContentSummary[] = [];
+  const seenSeriesIds = new Set<string>();
+
+  for (const row of progress) {
+    if (row.movie) {
+      items.push(mapMovieToContentSummary(row.movie));
+    } else if (row.episode && !seenSeriesIds.has(row.episode.season.series.id)) {
+      seenSeriesIds.add(row.episode.season.series.id);
+      items.push(mapSeriesToContentSummary(row.episode.season.series));
+    }
+  }
+
+  return items;
+}
+
 const SEARCH_RESULT_LIMIT = 60;
 
 /** Case-insensitive match on the title or the original title, across movies and series. */

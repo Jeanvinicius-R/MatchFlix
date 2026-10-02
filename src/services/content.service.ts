@@ -3,6 +3,7 @@ import {
   findAllMovies,
   findAllSeries,
   findContentByGenreSlug,
+  findContinueWatching,
   findFeaturedContent,
   searchContent,
 } from "@/repositories/content.repository";
@@ -41,6 +42,21 @@ export async function getHomeContentRows(kidsOnly = false): Promise<ContentRow[]
   ];
 
   return rows.filter((row) => row.items.length > 0);
+}
+
+/** Null (not an empty row) when nothing is in progress, or for a logged-out visitor. */
+export async function getContinueWatchingRow(
+  profileId: string | null,
+  kidsOnly = false,
+): Promise<ContentRow | null> {
+  if (!profileId) {
+    return null;
+  }
+
+  const items = await findContinueWatching(profileId, kidsOnly);
+  return items.length > 0
+    ? { id: "row-continuar", title: "Continuar assistindo", items }
+    : null;
 }
 
 export function getMovieCatalog(kidsOnly = false): Promise<ContentSummary[]> {
