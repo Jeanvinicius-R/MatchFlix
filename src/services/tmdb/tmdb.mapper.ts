@@ -13,6 +13,10 @@ import type {
   TmdbSeriesDetailsRaw,
   TmdbSeriesSearchResult,
   TmdbSeriesSearchResultRaw,
+  TmdbWatchProvider,
+  TmdbWatchProviderRaw,
+  TmdbWatchProviders,
+  TmdbWatchProvidersRaw,
 } from "@/services/tmdb/tmdb.types";
 
 /**
@@ -127,5 +131,38 @@ export function mapSeasonDetails(raw: TmdbSeasonDetailsRaw): TmdbSeasonDetails {
       durationInMinutes: episode.runtime,
       thumbnailUrl: buildTmdbImageUrl(episode.still_path, "w500"),
     })),
+  };
+}
+
+function mapWatchProvider(raw: TmdbWatchProviderRaw): TmdbWatchProvider {
+  return {
+    providerId: raw.provider_id,
+    name: raw.provider_name,
+    logoUrl: buildTmdbImageUrl(raw.logo_path, "w92"),
+    displayPriority: raw.display_priority,
+  };
+}
+
+function mapWatchProviderList(raw: TmdbWatchProviderRaw[] | undefined): TmdbWatchProvider[] {
+  return (raw ?? [])
+    .map(mapWatchProvider)
+    .sort((a, b) => a.displayPriority - b.displayPriority);
+}
+
+/** `region` is an ISO 3166-1 code (e.g. "BR"); a region TMDB has no data for maps to empty lists, never undefined. */
+export function mapWatchProviders(raw: TmdbWatchProvidersRaw, region: string): TmdbWatchProviders {
+  const country = raw.results[region];
+
+  if (!country) {
+    return { link: null, flatrate: [], free: [], ads: [], rent: [], buy: [] };
+  }
+
+  return {
+    link: country.link ?? null,
+    flatrate: mapWatchProviderList(country.flatrate),
+    free: mapWatchProviderList(country.free),
+    ads: mapWatchProviderList(country.ads),
+    rent: mapWatchProviderList(country.rent),
+    buy: mapWatchProviderList(country.buy),
   };
 }

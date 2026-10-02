@@ -45,7 +45,7 @@ export async function tmdbGet<TResponse>(
   return response.json() as Promise<TResponse>;
 }
 
-export type TmdbImageSize = "w500" | "w1280" | "original";
+export type TmdbImageSize = "w92" | "w500" | "w1280" | "original";
 
 export function buildTmdbImageUrl(
   path: string | null,

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Fraunces, Inter } from "next/font/google";
+import { Footer } from "@/components/layout/Footer";
 import { siteConfig } from "@/config/site.config";
 import { THEME_STORAGE_KEY } from "@/constants/theme.constants";
 import "./globals.css";
@@ -35,6 +36,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       </head>
       <body className="bg-background text-foreground flex min-h-full flex-col">
         {children}
+        <Footer />
       </body>
     </html>
   );

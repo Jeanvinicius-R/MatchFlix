@@ -5,6 +5,7 @@ import {
   mapSeasonDetails,
   mapSeriesDetails,
   mapSeriesSearchResult,
+  mapWatchProviders,
 } from "@/services/tmdb/tmdb.mapper";
 import type {
   TmdbGenre,
@@ -20,7 +21,12 @@ import type {
   TmdbSeriesDetailsRaw,
   TmdbSeriesSearchResult,
   TmdbSeriesSearchResultRaw,
+  TmdbWatchProviders,
+  TmdbWatchProvidersRaw,
 } from "@/services/tmdb/tmdb.types";
+
+/** "Onde assistir" only ever targets Brazil — this is a Brazilian catalog. */
+const WATCH_PROVIDERS_REGION = "BR";
 
 /**
  * Business-facing operations for browsing TMDB's catalog. This is the only
@@ -76,4 +82,15 @@ export async function getMovieGenres(): Promise<TmdbGenre[]> {
 export async function getSeriesGenres(): Promise<TmdbGenre[]> {
   const response = await tmdbGet<TmdbGenreListResponse>("/genre/tv/list");
   return response.genres;
+}
+
+/** "Where to watch" — never a playback source, see src/features/watch/components/WhereToWatch.tsx. */
+export async function getMovieWatchProviders(tmdbId: number): Promise<TmdbWatchProviders> {
+  const raw = await tmdbGet<TmdbWatchProvidersRaw>(`/movie/${tmdbId}/watch/providers`);
+  return mapWatchProviders(raw, WATCH_PROVIDERS_REGION);
+}
+
+export async function getSeriesWatchProviders(tmdbId: number): Promise<TmdbWatchProviders> {
+  const raw = await tmdbGet<TmdbWatchProvidersRaw>(`/tv/${tmdbId}/watch/providers`);
+  return mapWatchProviders(raw, WATCH_PROVIDERS_REGION);
 }

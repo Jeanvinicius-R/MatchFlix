@@ -116,6 +116,31 @@ export interface TmdbSeasonDetailsRaw {
   episodes: TmdbEpisodeRaw[];
 }
 
+/** One streaming service, as returned under each category of a country's watch/providers entry. */
+export interface TmdbWatchProviderRaw {
+  provider_id: number;
+  provider_name: string;
+  logo_path: string | null;
+  display_priority: number;
+}
+
+/** Everything TMDB knows about where to watch a title in a single country. */
+export interface TmdbWatchProvidersCountryRaw {
+  /** TMDB's own "where to watch" page for this title/country — never a provider's own deep link. */
+  link: string;
+  flatrate?: TmdbWatchProviderRaw[];
+  free?: TmdbWatchProviderRaw[];
+  ads?: TmdbWatchProviderRaw[];
+  rent?: TmdbWatchProviderRaw[];
+  buy?: TmdbWatchProviderRaw[];
+}
+
+/** Raw response of GET /movie/{id}/watch/providers and /tv/{id}/watch/providers — keyed by ISO 3166-1 country code. */
+export interface TmdbWatchProvidersRaw {
+  id: number;
+  results: Record<string, TmdbWatchProvidersCountryRaw>;
+}
+
 // ---------------------------------------------------------------------------
 // Internal shapes produced by tmdb.mapper.ts. This is what the rest of the
 // app (future admin forms, API routes) is allowed to depend on — never the
@@ -187,4 +212,25 @@ export interface TmdbSeasonDetails {
   synopsis: string;
   posterUrl: string | null;
   episodes: TmdbEpisodeSummary[];
+}
+
+export interface TmdbWatchProvider {
+  providerId: number;
+  name: string;
+  logoUrl: string | null;
+  displayPriority: number;
+}
+
+/**
+ * Where to watch a title in one region — never a playback source. `link`
+ * points at TMDB's own aggregator page (or is null when the region has no
+ * data); the category lists are never undefined, just empty.
+ */
+export interface TmdbWatchProviders {
+  link: string | null;
+  flatrate: TmdbWatchProvider[];
+  free: TmdbWatchProvider[];
+  ads: TmdbWatchProvider[];
+  rent: TmdbWatchProvider[];
+  buy: TmdbWatchProvider[];
 }

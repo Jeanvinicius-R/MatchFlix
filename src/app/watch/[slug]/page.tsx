@@ -7,6 +7,7 @@ import MoviePlayback from "@/components/playback/MoviePlayback";
 import { FavoriteButton } from "@/features/favorites/components/FavoriteButton";
 import { MissingVideoNotice } from "@/features/watch/components/MissingVideoNotice";
 import { WatchPlayer } from "@/features/watch/components/WatchPlayer";
+import { WhereToWatch } from "@/features/watch/components/WhereToWatch";
 import { auth } from "@/lib/auth";
 import { requireProfile } from "@/lib/require-profile";
 import { isInMyList } from "@/services/favorite.service";
@@ -79,6 +80,8 @@ export default async function WatchPage({ params }: WatchPageProps) {
             />
           </div>
         </div>
+
+        {movie.tmdbId && <WhereToWatch tmdbId={movie.tmdbId} kind="movie" />}
       </main>
     </>
   );

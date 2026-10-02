@@ -7,6 +7,7 @@ import EpisodePlayback from "@/components/playback/EpisodePlayback";
 import { FavoriteButton } from "@/features/favorites/components/FavoriteButton";
 import { MissingVideoNotice } from "@/features/watch/components/MissingVideoNotice";
 import { WatchPlayer } from "@/features/watch/components/WatchPlayer";
+import { WhereToWatch } from "@/features/watch/components/WhereToWatch";
 import { auth } from "@/lib/auth";
 import { requireProfile } from "@/lib/require-profile";
 import { cn } from "@/lib/utils";
@@ -134,6 +135,8 @@ export default async function WatchSeriesPage({
             />
           </div>
         </div>
+
+        {series.tmdbId && <WhereToWatch tmdbId={series.tmdbId} kind="series" />}
 
         {series.seasons.map((season) => (
           <section key={season.id} className="flex flex-col gap-2">
