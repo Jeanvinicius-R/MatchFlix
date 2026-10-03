@@ -14,6 +14,17 @@ export interface PlaybackContext {
   tmdbId: number;
   season?: number;
   episode?: number;
+
+  // TMDB metadata, filled in when available, for providers that search by
+  // name (YouTube). Providers that only need ids can ignore these.
+
+  /** Movie title, or the series name for an episode (pt-BR). */
+  title?: string;
+  originalTitle?: string;
+  year?: number;
+  episodeTitle?: string;
+  /** Movie or episode runtime in minutes. */
+  runtimeMinutes?: number;
 }
 
 export interface PlaybackProvider {

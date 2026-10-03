@@ -81,7 +81,13 @@ export default function PlaybackPlayer({ source }: PlaybackPlayerProps) {
           className="h-full w-full border-0"
           allow="autoplay; fullscreen; picture-in-picture"
           allowFullScreen
-          referrerPolicy="no-referrer"
+          // YouTube's embed requires an HTTP Referer to identify the site
+          // (its policy recommends this value); other providers get none.
+          referrerPolicy={
+            source.provider === "youtube"
+              ? "strict-origin-when-cross-origin"
+              : "no-referrer"
+          }
         />
       ) : source.type === "direct" ? (
         <video
