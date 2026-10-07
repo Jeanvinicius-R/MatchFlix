@@ -9,4 +9,5 @@ export const PRIMARY_NAVIGATION: NavigationLink[] = [
   { label: "Filmes", href: "/movies" },
   { label: "Séries", href: "/series" },
   { label: "Minha lista", href: "/my-list" },
+  { label: "Histórico", href: "/history" },
 ];

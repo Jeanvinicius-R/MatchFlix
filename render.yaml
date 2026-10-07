@@ -42,11 +42,16 @@ services:
       # com um erro claro; o resto do site funciona normalmente.
       - key: TMDB_ACCESS_TOKEN
         sync: false
-      # Fontes de reprodução por API/domínio público (ver AGENTS.md do
+      # Fontes de reprodução por API/domínio público (ver README do
       # projeto e src/services/playback/providers/). Deixe em branco para
       # desativar o provider correspondente — nunca aponte para um serviço
       # sem autorização de uso.
       - key: PLAYBACK_AUTHORIZED_BASE_URL
         sync: false
-      - key: PLAYBACK_PROVIDER_BASE_URL
+      # YouTube Data API v3 (oficial). Só funciona com as DUAS preenchidas;
+      # a allowlist é decisão de quem opera o site ("embeddable" não prova
+      # licença). Vazias = provider desativado, nenhuma chamada ao YouTube.
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: YOUTUBE_ALLOWED_CHANNEL_IDS
         sync: false

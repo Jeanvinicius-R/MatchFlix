@@ -70,7 +70,7 @@ interface YoutubeSearchResponse {
   }[];
 }
 
-interface YoutubeVideo {
+export interface YoutubeVideo {
   id: string;
   snippet?: {
     title?: string;
@@ -93,7 +93,7 @@ interface YoutubeVideoListResponse {
 }
 
 /** What the video's title must mention, and how long it must be. */
-interface MatchRule {
+export interface MatchRule {
   /** At least one of these must appear in the title (series or movie name). */
   titles: string[];
   /** When non-empty, at least one of these must appear too (episode markers). */
@@ -106,7 +106,7 @@ function getApiKey(): string | null {
 }
 
 /** Lowercase, no accents, no punctuation — so "Ação!" matches "acao". */
-function normalize(text: string): string {
+export function normalize(text: string): string {
   return text
     .normalize("NFD")
     .replace(/\p{M}/gu, "")
@@ -120,7 +120,7 @@ function uniqueNonEmpty(values: (string | undefined)[]): string[] {
 }
 
 /** ISO 8601 duration ("PT1H32M10S") -> minutes, or null when unparseable. */
-function parseDurationMinutes(duration: string | undefined): number | null {
+export function parseDurationMinutes(duration: string | undefined): number | null {
   const match = duration?.match(/^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
 
   if (!match) {
@@ -142,7 +142,7 @@ function isAvailableInRegion(video: YoutubeVideo): boolean {
 }
 
 /** Every check a video must pass to become a playback source. */
-function isAcceptable(
+export function isAcceptable(
   video: YoutubeVideo,
   rule: MatchRule,
   allowedChannelIds: ReadonlySet<string>,

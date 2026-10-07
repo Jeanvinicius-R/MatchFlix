@@ -3,6 +3,9 @@
 import { Maximize, Minimize } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { buttonStyles } from "@/components/ui/Button";
+import type { WatchTarget } from "@/components/playback/playback-target";
+import { YouTubePlayer } from "@/components/playback/YouTubePlayer";
+import { getYouTubeVideoId } from "@/components/playback/youtube-url";
 import type { PlaybackSource } from "@/services/playback/playback.types";
 
 // Both checks below never change at runtime; on the server they are reported
@@ -13,8 +16,8 @@ const getServerFullscreenSupport = () => false;
 
 /**
  * Native HLS playback only works where the browser itself understands the
- * format (Safari/iOS). Everywhere else this reports false — playing HLS
- * there needs a library like hls.js, not installed in this phase.
+ * format (Safari/iOS). No current provider returns "hls", so hls.js is not
+ * bundled — see README "PlaybackPlayer".
  */
 const getHlsSupport = () =>
   document.createElement("video").canPlayType("application/vnd.apple.mpegurl") !== "";
@@ -22,6 +25,10 @@ const getServerHlsSupport = () => false;
 
 interface PlaybackPlayerProps {
   source: PlaybackSource;
+  /** When set, providers with an official player API save progress/history against it. */
+  target?: WatchTarget;
+  resumeAt?: number;
+  nextHref?: string;
 }
 
 /**
@@ -30,9 +37,16 @@ interface PlaybackPlayerProps {
  * offers. The iframe keeps `allowFullScreen`, so a provider's own fullscreen
  * control still works too.
  */
-export default function PlaybackPlayer({ source }: PlaybackPlayerProps) {
+export default function PlaybackPlayer({
+  source,
+  target,
+  resumeAt = 0,
+  nextHref,
+}: PlaybackPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // Falls back to the plain embed if the YouTube API script cannot load.
+  const [youTubeApiFailed, setYouTubeApiFailed] = useState(false);
   const canFullscreen = useSyncExternalStore(
     subscribeToNothing,
     getFullscreenSupport,
@@ -67,17 +81,32 @@ export default function PlaybackPlayer({ source }: PlaybackPlayerProps) {
   }, []);
 
   const label = isFullscreen ? "Sair da tela cheia" : "Entrar em tela cheia";
+  const title = source.label ?? source.provider;
+  const youTubeVideoId =
+    source.provider === "youtube" && target && !youTubeApiFailed
+      ? getYouTubeVideoId(source.url)
+      : null;
 
   return (
     <div
       ref={containerRef}
       className="relative aspect-video w-full overflow-hidden bg-black [&:fullscreen]:aspect-auto"
     >
-      {source.type === "iframe" ? (
+      {youTubeVideoId && target ? (
+        <YouTubePlayer
+          key={source.id}
+          videoId={youTubeVideoId}
+          title={title}
+          target={target}
+          resumeAt={resumeAt}
+          nextHref={nextHref}
+          onLoadError={() => setYouTubeApiFailed(true)}
+        />
+      ) : source.type === "iframe" ? (
         <iframe
           key={source.id}
           src={source.url}
-          title={source.label ?? source.provider}
+          title={title}
           className="h-full w-full border-0"
           allow="autoplay; fullscreen; picture-in-picture"
           allowFullScreen
@@ -99,8 +128,6 @@ export default function PlaybackPlayer({ source }: PlaybackPlayerProps) {
         />
       ) : source.type === "hls" ? (
         supportsHls ? (
-          // Native support only (Safari/iOS). Other browsers need hls.js,
-          // not installed yet — see the phase 1 report.
           <video
             key={source.id}
             src={source.url}
@@ -109,15 +136,15 @@ export default function PlaybackPlayer({ source }: PlaybackPlayerProps) {
             className="h-full w-full"
           />
         ) : (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-center text-white">
+          <div className="flex h-full w-full flex-col items-center justify-center gap-1 px-4 text-center text-white">
             <p>Este navegador não sabe tocar este vídeo (HLS) nativamente.</p>
             <p className="text-muted-foreground text-sm">
-              Tente no Safari/iOS, ou peça outra fonte abaixo.
+              Tente no Safari/iOS, ou escolha outra fonte abaixo.
             </p>
           </div>
         )
       ) : source.type === "external" ? (
-        <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-center text-white">
+        <div className="flex h-full w-full flex-col items-center justify-center gap-3 px-4 text-center text-white">
           <p>Esta fonte não pode ser exibida aqui dentro.</p>
           <a
             href={source.url}

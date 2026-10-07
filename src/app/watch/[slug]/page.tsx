@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Header } from "@/components/layout/Header";
-import MoviePlayback from "@/components/playback/MoviePlayback";
+import PlaybackSources from "@/components/playback/PlaybackSources";
 import { FavoriteButton } from "@/features/favorites/components/FavoriteButton";
 import { MissingVideoNotice } from "@/features/watch/components/MissingVideoNotice";
 import { WatchPlayer } from "@/features/watch/components/WatchPlayer";
@@ -31,7 +31,7 @@ export default async function WatchPage({ params }: WatchPageProps) {
   }
 
   const inMyList = await isInMyList(profile.id, { kind: "movie", contentId: movie.id });
-  const resumeAt = movie.video ? await getMovieResumePosition(profile.id, movie.id) : 0;
+  const resumeAt = await getMovieResumePosition(profile.id, movie.id);
 
   return (
     <>
@@ -54,7 +54,11 @@ export default async function WatchPage({ params }: WatchPageProps) {
             resumeAt={resumeAt}
           />
         ) : movie.tmdbId ? (
-          <MoviePlayback tmdbId={movie.tmdbId} />
+          <PlaybackSources
+            endpoint={`/api/playback/movie/${movie.tmdbId}`}
+            target={{ kind: "movie", contentId: movie.id }}
+            resumeAt={resumeAt}
+          />
         ) : (
           <MissingVideoNotice
             noun="filme"

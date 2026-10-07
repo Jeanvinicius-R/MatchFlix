@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Header } from "@/components/layout/Header";
-import EpisodePlayback from "@/components/playback/EpisodePlayback";
+import PlaybackSources from "@/components/playback/PlaybackSources";
 import { FavoriteButton } from "@/features/favorites/components/FavoriteButton";
 import { MissingVideoNotice } from "@/features/watch/components/MissingVideoNotice";
 import { WatchPlayer } from "@/features/watch/components/WatchPlayer";
@@ -94,11 +94,12 @@ export default async function WatchSeriesPage({
                 nextHref={next ? episodeHref(next.id, true) : undefined}
               />
             ) : (
-              <EpisodePlayback
+              <PlaybackSources
                 key={current.id}
-                tmdbId={series.tmdbId!}
-                season={current.seasonNumber}
-                episode={current.episodeNumber}
+                endpoint={`/api/playback/tv/${series.tmdbId}/${current.seasonNumber}/${current.episodeNumber}`}
+                target={{ kind: "episode", contentId: current.id }}
+                resumeAt={resumeAt}
+                nextHref={next ? episodeHref(next.id, true) : undefined}
               />
             )}
             <p className="text-foreground text-sm font-medium">

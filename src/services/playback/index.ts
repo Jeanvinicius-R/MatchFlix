@@ -11,13 +11,11 @@ import {
 } from "@/services/tmdb/tmdb.service";
 import { createPlaybackResolver } from "./playback.resolver";
 import { authorizedProvider } from "./providers/authorized.provider";
-import { exampleProvider } from "./providers/example.provider";
 import { internetArchiveProvider } from "./providers/internet-archive.provider";
 import { youtubeProvider } from "./providers/youtube.provider";
 
 const providers: PlaybackProvider[] = [
   authorizedProvider,
-  exampleProvider,
   internetArchiveProvider,
   youtubeProvider,
 ];
