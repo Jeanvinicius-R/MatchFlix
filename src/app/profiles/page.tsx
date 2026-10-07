@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { safeNextPath, withNext } from "@/lib/next-path";
@@ -36,6 +37,12 @@ export default async function ProfilesPage({ searchParams }: ProfilesPageProps) 
         Quem está assistindo?
       </h1>
       <ProfileGrid profiles={profiles} next={next} />
+      <Link
+        href="/profiles/manage"
+        className="text-muted-foreground hover:text-foreground border-border rounded-md border px-4 py-2 text-sm transition-colors"
+      >
+        Gerenciar perfis
+      </Link>
     </main>
   );
 }

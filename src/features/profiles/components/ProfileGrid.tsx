@@ -22,7 +22,11 @@ export function ProfileGrid({ profiles, next = null }: ProfileGridProps) {
           className="group flex flex-col items-center gap-3"
         >
           <span className="rounded-full transition-transform group-hover:scale-105">
-            <ProfileAvatar name={profile.name} isKids={profile.isKids} />
+            <ProfileAvatar
+              name={profile.name}
+              isKids={profile.isKids}
+              imageUrl={profile.avatarUrl}
+            />
           </span>
           <span className="text-muted-foreground group-hover:text-foreground text-sm transition-colors">
             {profile.name}

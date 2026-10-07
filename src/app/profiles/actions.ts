@@ -1,14 +1,25 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { z } from "zod";
 import { auth } from "@/lib/auth";
-import { createProfileSchema } from "@/schemas/profile.schemas";
-import { ProfileLimitReachedError, registerProfile } from "@/services/profile.service";
+import { createProfileSchema, updateProfileSchema } from "@/schemas/profile.schemas";
+import {
+  editProfile,
+  LastProfileError,
+  ProfileLimitReachedError,
+  ProfileNotOwnedError,
+  registerProfile,
+  removeProfile,
+} from "@/services/profile.service";
 
 export interface CreateProfileActionState {
   formError?: string;
   fieldErrors?: Record<string, string[]>;
 }
+
+export type ProfileActionState = CreateProfileActionState;
 
 async function requireUserId(): Promise<string> {
   const session = await auth();
@@ -38,4 +49,53 @@ export async function createProfileAction(
   }
 
   redirect("/profiles");
+}
+
+const profileIdSchema = z.uuid();
+
+export async function updateProfileAction(
+  profileId: unknown,
+  input: unknown,
+): Promise<ProfileActionState> {
+  const userId = await requireUserId();
+  const id = profileIdSchema.safeParse(profileId);
+  const parsedInput = updateProfileSchema.safeParse(input);
+  if (!id.success) {
+    return { formError: "Perfil não encontrado." };
+  }
+  if (!parsedInput.success) {
+    return { fieldErrors: parsedInput.error.flatten().fieldErrors };
+  }
+
+  try {
+    await editProfile(userId, id.data, parsedInput.data);
+  } catch (error) {
+    if (error instanceof ProfileNotOwnedError) {
+      return { formError: error.message };
+    }
+    throw error;
+  }
+
+  revalidatePath("/", "layout");
+  redirect("/profiles/manage");
+}
+
+export async function deleteProfileAction(profileId: unknown): Promise<ProfileActionState> {
+  const userId = await requireUserId();
+  const id = profileIdSchema.safeParse(profileId);
+  if (!id.success) {
+    return { formError: "Perfil não encontrado." };
+  }
+
+  try {
+    await removeProfile(userId, id.data);
+  } catch (error) {
+    if (error instanceof ProfileNotOwnedError || error instanceof LastProfileError) {
+      return { formError: error.message };
+    }
+    throw error;
+  }
+
+  revalidatePath("/", "layout");
+  redirect("/profiles/manage");
 }

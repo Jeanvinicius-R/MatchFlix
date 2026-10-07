@@ -89,12 +89,20 @@ export default async function SettingsPage() {
           title="Perfis"
           description="Cada perfil tem o próprio histórico e a própria lista."
         >
-          <Link
-            href="/profiles/new"
-            className="text-accent hover:text-accent-strong w-fit text-sm font-medium"
-          >
-            Adicionar perfil
-          </Link>
+          <div className="flex flex-wrap gap-x-6 gap-y-2">
+            <Link
+              href="/profiles/manage"
+              className="text-accent hover:text-accent-strong w-fit text-sm font-medium"
+            >
+              Gerenciar perfis
+            </Link>
+            <Link
+              href="/profiles/new"
+              className="text-accent hover:text-accent-strong w-fit text-sm font-medium"
+            >
+              Adicionar perfil
+            </Link>
+          </div>
         </SettingsSection>
       </main>
     </>

@@ -10,3 +10,7 @@ export const createProfileSchema = z.object({
 });
 
 export type CreateProfileInput = z.infer<typeof createProfileSchema>;
+
+/** Editing uses the same rules as creating: name + kids flag. */
+export const updateProfileSchema = createProfileSchema;
+export type UpdateProfileInput = CreateProfileInput;

@@ -5,10 +5,12 @@ import {
 } from "@/lib/active-profile-cookie";
 import {
   createProfile,
+  deleteProfile as deleteProfileRecord,
   findProfileById,
   findProfilesByUserId,
+  updateProfile as updateProfileRecord,
 } from "@/repositories/profile.repository";
-import type { CreateProfileInput } from "@/schemas/profile.schemas";
+import type { CreateProfileInput, UpdateProfileInput } from "@/schemas/profile.schemas";
 import type { ProfileSummary } from "@/types/profile.types";
 
 const MAX_PROFILES_PER_ACCOUNT = 5;
@@ -53,6 +55,45 @@ async function requireOwnedProfile(
     throw new ProfileNotOwnedError();
   }
   return profile;
+}
+
+export class LastProfileError extends Error {
+  constructor() {
+    super("A conta precisa de pelo menos um perfil. Crie outro antes de excluir este.");
+    this.name = "LastProfileError";
+  }
+}
+
+/** Returns the profile only if it belongs to the account (for edit screens). */
+export function getOwnedProfile(userId: string, profileId: string): Promise<ProfileSummary> {
+  return requireOwnedProfile(userId, profileId);
+}
+
+export async function editProfile(
+  userId: string,
+  profileId: string,
+  input: UpdateProfileInput,
+): Promise<void> {
+  await requireOwnedProfile(userId, profileId);
+  await updateProfileRecord(profileId, { name: input.name, isKids: input.isKids });
+}
+
+/**
+ * Deletes a profile with its history, progress, favorites and avatar. The
+ * last profile of an account cannot go, and deleting the active one clears
+ * the cookie so the account picks another.
+ */
+export async function removeProfile(userId: string, profileId: string): Promise<void> {
+  await requireOwnedProfile(userId, profileId);
+  const profiles = await findProfilesByUserId(userId);
+  if (profiles.length <= 1) {
+    throw new LastProfileError();
+  }
+
+  await deleteProfileRecord(profileId);
+  if ((await readActiveProfileCookie()) === profileId) {
+    await clearActiveProfileCookie();
+  }
 }
 
 export async function selectProfile(userId: string, profileId: string): Promise<void> {
