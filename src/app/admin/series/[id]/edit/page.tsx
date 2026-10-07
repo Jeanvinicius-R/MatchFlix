@@ -4,8 +4,13 @@ import { applySeriesImagesAction } from "@/app/admin/series/actions";
 import { ContentImagesSection } from "@/features/admin/components/ContentImagesSection";
 import { SeriesEpisodesSection } from "@/features/admin/components/SeriesEpisodesSection";
 import { SeriesForm } from "@/features/admin/components/SeriesForm";
+import { SeriesSeasonsManager } from "@/features/admin/components/SeriesSeasonsManager";
 import { listGenresForAdmin } from "@/services/genre.service";
-import { getSeriesForAdmin, SeriesNotFoundError } from "@/services/series.service";
+import {
+  getSeriesForAdmin,
+  listTmdbSeasons,
+  SeriesNotFoundError,
+} from "@/services/series.service";
 import { listVideoSourceProviders } from "@/services/video-sources";
 
 export const metadata: Metadata = { title: "Editar série — Painel administrativo" };
@@ -27,6 +32,11 @@ export default async function EditSeriesPage({ params }: EditSeriesPageProps) {
     listGenresForAdmin(),
   ]);
 
+  // Best effort: TMDB being down only hides the import checklist.
+  const tmdbSeasons = series.tmdbId
+    ? await listTmdbSeasons(series.tmdbId).catch(() => null)
+    : null;
+
   return (
     <div className="flex flex-col gap-6">
       <h1 className="font-display text-foreground text-2xl font-semibold">
@@ -40,6 +50,12 @@ export default async function EditSeriesPage({ params }: EditSeriesPageProps) {
         posterUrl={series.poster?.url ?? null}
         backdropUrl={series.backdrop?.url ?? null}
         applyImages={applySeriesImagesAction}
+      />
+      <SeriesSeasonsManager
+        seriesId={series.id}
+        hasTmdbId={series.tmdbId !== null}
+        tmdbSeasons={tmdbSeasons}
+        seasons={series.seasons}
       />
       <SeriesEpisodesSection
         seriesId={series.id}

@@ -254,7 +254,7 @@ export function SeriesEpisodesSection({
 
       {seasons.length === 0 ? (
         <p className="text-muted-foreground text-sm">
-          Esta série ainda não tem temporadas. Importe da TMDB ao criar a série.
+          Esta série ainda não tem temporadas. Adicione ou importe em «Temporadas e episódios».
         </p>
       ) : (
         seasons.map((season) => (

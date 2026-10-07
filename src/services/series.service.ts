@@ -14,9 +14,27 @@ import {
   setSeriesImages,
   updateSeries as updateSeriesRecord,
 } from "@/repositories/series.repository";
+import {
+  createEpisode,
+  createSeason,
+  findEpisodeByNumber,
+  findEpisodeOfSeries,
+  findSeasonByNumber,
+  findSeasonOfSeries,
+  mergeSeasons,
+  type SeasonSyncReport,
+  updateEpisodeFields,
+} from "@/repositories/season.repository";
 import { upsertGenresByName } from "@/services/genre.service";
-import { getSeasonDetails } from "@/services/tmdb/tmdb.service";
-import type { SeriesFormInput, UpdateSeriesFormInput } from "@/schemas/series.schemas";
+import { getSeasonDetails, getSeriesDetails } from "@/services/tmdb/tmdb.service";
+import type {
+  AddEpisodeInput,
+  AddSeasonInput,
+  SeriesFormInput,
+  SyncSeasonsInput,
+  UpdateEpisodeInput,
+  UpdateSeriesFormInput,
+} from "@/schemas/series.schemas";
 import type { AssignEpisodeVideosInput } from "@/schemas/video-source.schemas";
 import { fetchSeriesImages } from "@/services/content-images.service";
 import { getVideoSourceProvider } from "@/services/video-sources";
@@ -48,7 +66,7 @@ export async function getSeriesForAdmin(id: string) {
  * Fetches every requested season's episodes from TMDB, one at a time.
  * Sequential on purpose: tmdbGet has no built-in throttling, and staying
  * sequential keeps this comfortably under TMDB's rate limit even for
- * shows with many seasons — see plan's risk #1 if this ever needs batching.
+ * shows with many seasons.
  */
 async function importSeasonsFromTmdb(
   tmdbId: number,
@@ -205,6 +223,88 @@ export async function removeEpisodeVideo(
   if (!removed) {
     throw new VideoSourceError("Episódio não encontrado nesta série.");
   }
+}
+
+export class SeasonManagementError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SeasonManagementError";
+  }
+}
+
+/**
+ * Re-imports seasons from TMDB into an existing series: creates what is
+ * missing and, when asked, refreshes the text of what exists. Nothing is
+ * deleted and linked videos are kept (see season.repository mergeSeasons).
+ */
+export async function syncSeasonsFromTmdb(
+  seriesId: string,
+  input: SyncSeasonsInput,
+): Promise<SeasonSyncReport> {
+  const series = await getSeriesForAdmin(seriesId);
+  if (!series.tmdbId) {
+    throw new SeasonManagementError(
+      "Vincule a série a um título da TMDB (campo TMDB ID) antes de importar temporadas.",
+    );
+  }
+
+  let seasons: SeasonImportInput[];
+  try {
+    seasons = await importSeasonsFromTmdb(series.tmdbId, [...new Set(input.seasonNumbers)]);
+  } catch {
+    throw new SeasonManagementError("Não foi possível consultar a TMDB. Tente novamente.");
+  }
+  return mergeSeasons(seriesId, seasons, input.updateExisting);
+}
+
+/** Season numbers TMDB knows for this series, for the import checklist. */
+export async function listTmdbSeasons(tmdbId: number) {
+  const details = await getSeriesDetails(tmdbId);
+  return details.seasons;
+}
+
+export async function addSeason(seriesId: string, input: AddSeasonInput): Promise<void> {
+  await getSeriesForAdmin(seriesId);
+  if (await findSeasonByNumber(seriesId, input.seasonNumber)) {
+    throw new SeasonManagementError(`A temporada ${input.seasonNumber} já existe.`);
+  }
+  await createSeason(seriesId, {
+    seasonNumber: input.seasonNumber,
+    title: input.title || null,
+  });
+}
+
+function toEpisodeFields(input: {
+  title: string;
+  synopsis?: string;
+  durationInMinutes?: number | "";
+}) {
+  return {
+    title: input.title,
+    synopsis: input.synopsis || null,
+    durationInMinutes:
+      typeof input.durationInMinutes === "number" ? input.durationInMinutes : null,
+  };
+}
+
+export async function addEpisode(seriesId: string, input: AddEpisodeInput): Promise<void> {
+  if (!(await findSeasonOfSeries(seriesId, input.seasonId))) {
+    throw new SeasonManagementError("Temporada não encontrada nesta série.");
+  }
+  if (await findEpisodeByNumber(input.seasonId, input.episodeNumber)) {
+    throw new SeasonManagementError(`O episódio ${input.episodeNumber} já existe nesta temporada.`);
+  }
+  await createEpisode(input.seasonId, {
+    episodeNumber: input.episodeNumber,
+    ...toEpisodeFields(input),
+  });
+}
+
+export async function editEpisode(seriesId: string, input: UpdateEpisodeInput): Promise<void> {
+  if (!(await findEpisodeOfSeries(seriesId, input.episodeId))) {
+    throw new SeasonManagementError("Episódio não encontrado nesta série.");
+  }
+  await updateEpisodeFields(input.episodeId, toEpisodeFields(input));
 }
 
 /** Pulls the poster and backdrop of a TMDB title onto an existing series. */

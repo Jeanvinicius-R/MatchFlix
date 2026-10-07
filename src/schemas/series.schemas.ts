@@ -37,7 +37,7 @@ export const seriesFormSchema = z.object({
   tmdbSeasonNumbers: z.array(z.number().int().positive()).optional(),
 });
 
-// Edit is series-level only (see README limitation) — no tmdbSeasonNumbers. tmdbId can be
+// The series form edits series-level fields only — seasons have their own actions below. tmdbId can be
 // set/changed here; leaving it empty keeps the stored value.
 export const updateSeriesFormSchema = z.object({
   ...seriesScalarFields,
@@ -51,3 +51,41 @@ export const updateSeriesFormSchema = z.object({
 
 export type SeriesFormInput = z.infer<typeof seriesFormSchema>;
 export type UpdateSeriesFormInput = z.infer<typeof updateSeriesFormSchema>;
+
+// --- Seasons/episodes management on an existing series (admin) ---
+
+export const syncSeasonsSchema = z.object({
+  seasonNumbers: z
+    .array(z.number().int().min(0).max(1000))
+    .min(1, "Escolha ao menos uma temporada.")
+    .max(100),
+  updateExisting: z.boolean(),
+});
+export type SyncSeasonsInput = z.infer<typeof syncSeasonsSchema>;
+
+export const addSeasonSchema = z.object({
+  seasonNumber: z.coerce.number().int().min(0, "Número inválido.").max(1000, "Número inválido."),
+  title: z.string().trim().max(200, "Máximo de 200 caracteres.").optional().or(z.literal("")),
+});
+export type AddSeasonInput = z.infer<typeof addSeasonSchema>;
+
+const episodeTextFields = {
+  title: z.string().trim().min(1, "Informe um título.").max(200, "Máximo de 200 caracteres."),
+  synopsis: z.string().trim().max(2000, "Máximo de 2000 caracteres.").optional().or(z.literal("")),
+  durationInMinutes: z
+    .union([z.literal(""), z.coerce.number().int().min(1, "Duração inválida.").max(1000)])
+    .optional(),
+};
+
+export const addEpisodeSchema = z.object({
+  seasonId: z.uuid(),
+  episodeNumber: z.coerce.number().int().min(1, "Número inválido.").max(10000),
+  ...episodeTextFields,
+});
+export type AddEpisodeInput = z.infer<typeof addEpisodeSchema>;
+
+export const updateEpisodeSchema = z.object({
+  episodeId: z.uuid(),
+  ...episodeTextFields,
+});
+export type UpdateEpisodeInput = z.infer<typeof updateEpisodeSchema>;

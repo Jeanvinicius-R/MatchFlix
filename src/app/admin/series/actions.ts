@@ -2,18 +2,31 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { z, type ZodType } from "zod";
 import { requireAdmin } from "@/lib/require-admin";
-import { seriesFormSchema, updateSeriesFormSchema } from "@/schemas/series.schemas";
+import {
+  addEpisodeSchema,
+  addSeasonSchema,
+  seriesFormSchema,
+  syncSeasonsSchema,
+  updateEpisodeSchema,
+  updateSeriesFormSchema,
+} from "@/schemas/series.schemas";
 import { applyImagesSchema } from "@/schemas/content-images.schemas";
 import { assignEpisodeVideosSchema } from "@/schemas/video-source.schemas";
 import { ImageSourceError } from "@/services/content-images.service";
 import {
+  addEpisode,
+  addSeason,
   applySeriesImages,
   assignEpisodeVideos,
   createSeries,
+  editEpisode,
   removeEpisodeVideo,
+  SeasonManagementError,
   SeriesNotFoundError,
   setSeriesActive,
+  syncSeasonsFromTmdb,
   updateSeries,
 } from "@/services/series.service";
 import { VideoSourceError } from "@/services/video-sources/video-source.errors";
@@ -122,6 +135,79 @@ export async function removeEpisodeVideoAction(
   await requireAdmin();
   await removeEpisodeVideo(seriesId, episodeId);
   revalidatePath(`/admin/series/${seriesId}/edit`);
+}
+
+export interface SeasonActionState extends SeriesActionState {
+  message?: string;
+}
+
+/** Shared shape for the season/episode actions: validate, run, revalidate, report. */
+async function runSeasonAction<T>(
+  seriesId: string,
+  schema: ZodType<T>,
+  input: unknown,
+  run: (data: T) => Promise<string>,
+): Promise<SeasonActionState> {
+  await requireAdmin();
+  const parsedInput = schema.safeParse(input);
+  if (!parsedInput.success) {
+    return { fieldErrors: z.flattenError(parsedInput.error).fieldErrors as Record<string, string[]> };
+  }
+  try {
+    const message = await run(parsedInput.data);
+    revalidatePath(`/admin/series/${seriesId}/edit`);
+    return { message };
+  } catch (error) {
+    if (error instanceof SeasonManagementError || error instanceof SeriesNotFoundError) {
+      return { formError: error.message };
+    }
+    throw error;
+  }
+}
+
+export async function syncSeasonsAction(
+  seriesId: string,
+  input: unknown,
+): Promise<SeasonActionState> {
+  return runSeasonAction(seriesId, syncSeasonsSchema, input, async (data) => {
+    const report = await syncSeasonsFromTmdb(seriesId, data);
+    return (
+      `${report.seasonsCreated} temporada(s) e ${report.episodesCreated} episódio(s) criados` +
+      (data.updateExisting
+        ? `; ${report.seasonsUpdated} temporada(s) e ${report.episodesUpdated} episódio(s) atualizados.`
+        : ".")
+    );
+  });
+}
+
+export async function addSeasonAction(
+  seriesId: string,
+  input: unknown,
+): Promise<SeasonActionState> {
+  return runSeasonAction(seriesId, addSeasonSchema, input, async (data) => {
+    await addSeason(seriesId, data);
+    return `Temporada ${data.seasonNumber} adicionada.`;
+  });
+}
+
+export async function addEpisodeAction(
+  seriesId: string,
+  input: unknown,
+): Promise<SeasonActionState> {
+  return runSeasonAction(seriesId, addEpisodeSchema, input, async (data) => {
+    await addEpisode(seriesId, data);
+    return `Episódio ${data.episodeNumber} adicionado.`;
+  });
+}
+
+export async function updateEpisodeAction(
+  seriesId: string,
+  input: unknown,
+): Promise<SeasonActionState> {
+  return runSeasonAction(seriesId, updateEpisodeSchema, input, async (data) => {
+    await editEpisode(seriesId, data);
+    return "Episódio atualizado.";
+  });
 }
 
 export async function toggleSeriesActiveAction(

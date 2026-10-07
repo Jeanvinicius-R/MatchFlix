@@ -50,6 +50,8 @@ const ADMIN_SERIES_DETAIL_SELECT = {
           id: true,
           episodeNumber: true,
           title: true,
+          synopsis: true,
+          durationInMinutes: true,
           video: { select: { fileName: true } },
         },
       },
@@ -137,7 +139,7 @@ export function createSeriesWithSeasons(
   });
 }
 
-/** Series-level fields only — seasons/episodes are never touched here (see README limitation). */
+/** Series-level fields only — seasons/episodes are managed in season.repository. */
 export function updateSeries(
   id: string,
   data: SeriesScalarInput & {
