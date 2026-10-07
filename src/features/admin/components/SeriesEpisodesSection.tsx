@@ -6,6 +6,7 @@ import {
   removeEpisodeVideoAction,
 } from "@/app/admin/series/actions";
 import { Button } from "@/components/ui/Button";
+import { FileUploadButton } from "@/components/ui/FileUploadButton";
 import {
   VideoSourcePicker,
   type PickedVideoSource,
@@ -183,6 +184,17 @@ function SeasonPanel({
                 >
                   {episode.video ? (episode.video.fileName ?? "com vídeo") : "sem vídeo"}
                 </span>
+              )}
+
+              {!picked && (
+                <FileUploadButton
+                  uploadUrl={`/api/admin/uploads/episode/${episode.id}/video`}
+                  accept="video/mp4,video/webm"
+                  label={episode.video ? "Trocar arquivo" : "Enviar arquivo"}
+                  successMessage="Vídeo enviado."
+                  variant="ghost"
+                  className="[&>label]:px-2 [&>label]:py-1 [&>label]:text-xs"
+                />
               )}
 
               {!picked && episode.video && (

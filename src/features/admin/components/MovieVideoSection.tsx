@@ -6,6 +6,7 @@ import {
   removeMovieVideoAction,
 } from "@/app/admin/movies/actions";
 import { Button } from "@/components/ui/Button";
+import { FileUploadButton } from "@/components/ui/FileUploadButton";
 import {
   VideoSourcePicker,
   type PickedVideoSource,
@@ -87,6 +88,18 @@ export function MovieVideoSection({
           </Button>
         )}
       </div>
+
+      <FileUploadButton
+        uploadUrl={`/api/admin/uploads/movie/${movieId}/video`}
+        accept="video/mp4,video/webm"
+        label="Enviar arquivo de vídeo"
+        successMessage="Vídeo enviado e vinculado ao filme."
+        className="items-start"
+      />
+      <p className="text-muted-foreground text-xs">
+        Envio próprio: MP4 ou WebM (limite em MEDIA_UPLOAD_MAX_VIDEO_MB, padrão 2048 MB). Só
+        envie vídeos que você tem direito de exibir. Ou vincule de uma fonte:
+      </p>
 
       <VideoSourcePicker
         providers={providers}

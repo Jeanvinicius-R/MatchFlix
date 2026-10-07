@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { FileUploadButton } from "@/components/ui/FileUploadButton";
 import { TmdbSearchPicker } from "@/features/admin/components/TmdbSearchPicker";
 import { cn } from "@/lib/utils";
 
@@ -82,7 +83,7 @@ export function ContentImagesSection({
       <div>
         <h2 className="font-display text-foreground text-lg font-semibold">Imagens</h2>
         <p className="text-muted-foreground mt-1 text-sm">
-          Pôster e banner vêm da TMDB. Busque {kind === "movie" ? "o filme" : "a série"} «
+          Envie suas próprias imagens ou use as da TMDB: busque {kind === "movie" ? "o filme" : "a série"} «
           {contentTitle}» e escolha o resultado certo para aplicar as imagens.
         </p>
       </div>
@@ -91,6 +92,24 @@ export function ContentImagesSection({
         <ImagePreview url={posterUrl} label="Pôster" className="aspect-[2/3] w-28" />
         <ImagePreview url={backdropUrl} label="Banner" className="aspect-video w-56" />
       </div>
+
+      <div className="flex flex-wrap gap-3">
+        <FileUploadButton
+          uploadUrl={`/api/admin/uploads/${kind}/${contentId}/poster`}
+          accept="image/jpeg,image/png,image/webp"
+          label="Enviar pôster"
+          successMessage="Pôster atualizado."
+        />
+        <FileUploadButton
+          uploadUrl={`/api/admin/uploads/${kind}/${contentId}/backdrop`}
+          accept="image/jpeg,image/png,image/webp"
+          label="Enviar banner"
+          successMessage="Banner atualizado."
+        />
+      </div>
+      <p className="text-muted-foreground text-xs">
+        Envio próprio: JPEG, PNG ou WebP, até 5 MB. Ou aplique as imagens da TMDB:
+      </p>
 
       <TmdbSearchPicker type={kind} onPick={handlePick} disabled={isBusy} />
 

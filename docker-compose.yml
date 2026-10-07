@@ -37,6 +37,9 @@ services:
       # Cloudflare acessa o container direto pela rede interna do compose
       # (http://app:3000), sem depender desta publicação de porta.
       - "3001:3000"
+    volumes:
+      # Uploads (storage LOCAL) sobrevivem a rebuilds/recriações do container.
+      - matchflix_uploads:/app/uploads
 
   cloudflared:
     image: cloudflare/cloudflared:latest
@@ -47,3 +50,4 @@ services:
 
 volumes:
   aurel_postgres_data:
+  matchflix_uploads:

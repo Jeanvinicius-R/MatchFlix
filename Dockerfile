@@ -50,6 +50,10 @@ RUN groupadd --system --gid 1001 nodejs \
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
+# Storage LOCAL dos uploads (MEDIA_UPLOAD_DIR padrão = /app/uploads). Monte um
+# volume aqui para os arquivos sobreviverem à recriação do container.
+RUN mkdir -p /app/uploads && chown nextjs:nodejs /app/uploads
+
 USER nextjs
 EXPOSE 3000
 

@@ -23,13 +23,23 @@ export async function createVideoMedia(
   return media.id;
 }
 
+/**
+ * Deletes a Media row and returns its storage key when the file lives in
+ * LOCAL storage, so the caller can remove the file once the transaction has
+ * committed (never before — a rollback would leave a row without its file).
+ */
 export async function deleteMediaIfPresent(
   tx: Prisma.TransactionClient,
   mediaId: string | null | undefined,
-): Promise<void> {
-  if (mediaId) {
-    await tx.media.delete({ where: { id: mediaId } });
+): Promise<string | null> {
+  if (!mediaId) {
+    return null;
   }
+  const deleted = await tx.media.delete({
+    where: { id: mediaId },
+    select: { storageProvider: true, storageKey: true },
+  });
+  return deleted.storageProvider === "LOCAL" ? deleted.storageKey : null;
 }
 
 export interface ImageUrls {

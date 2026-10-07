@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { removeStoredFiles } from "@/lib/storage/local-storage";
 import {
   createVideoMedia,
   deleteMediaIfPresent,
@@ -17,6 +18,7 @@ export async function findEpisodeIdsOfSeries(seriesId: string): Promise<Set<stri
 export async function setEpisodeVideos(
   items: { episodeId: string; video: VideoMediaInput }[],
 ): Promise<void> {
+  const orphans: (string | null)[] = [];
   await prisma.$transaction(async (tx) => {
     for (const { episodeId, video } of items) {
       const current = await tx.episode.findUnique({
@@ -29,9 +31,10 @@ export async function setEpisodeVideos(
         where: { id: episodeId },
         data: { videoMediaId: mediaId },
       });
-      await deleteMediaIfPresent(tx, current?.videoMediaId);
+      orphans.push(await deleteMediaIfPresent(tx, current?.videoMediaId));
     }
   });
+  await removeStoredFiles(orphans);
 }
 
 /** Returns false when the episode does not belong to that series. */
@@ -39,7 +42,8 @@ export async function clearEpisodeVideo(
   seriesId: string,
   episodeId: string,
 ): Promise<boolean> {
-  return prisma.$transaction(async (tx) => {
+  const orphans: (string | null)[] = [];
+  const result = await prisma.$transaction(async (tx) => {
     const current = await tx.episode.findFirst({
       where: { id: episodeId, season: { seriesId } },
       select: { videoMediaId: true },
@@ -49,7 +53,9 @@ export async function clearEpisodeVideo(
     }
 
     await tx.episode.update({ where: { id: episodeId }, data: { videoMediaId: null } });
-    await deleteMediaIfPresent(tx, current.videoMediaId);
+    orphans.push(await deleteMediaIfPresent(tx, current.videoMediaId));
     return true;
   });
+  await removeStoredFiles(orphans);
+  return result;
 }

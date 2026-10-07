@@ -1,30 +1,19 @@
-import { createReadStream } from "node:fs";
-import { Readable } from "node:stream";
 import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
+import { fileResponse } from "@/lib/http-range";
 import { getMimeType, resolveExistingLibraryFile } from "@/lib/media-library";
 
 interface RouteContext {
   params: Promise<{ path: string[] }>;
 }
 
-/** "bytes=START-END" | "bytes=START-" | "bytes=-SUFFIX" -> inclusive byte range, or null if unsatisfiable. */
-function parseRange(header: string, size: number): { start: number; end: number } | null {
-  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
-  if (!match || (match[1] === "" && match[2] === "")) {
+function decodeSegments(segments: string[]): string | null {
+  try {
+    return segments.map(decodeURIComponent).join("/");
+  } catch {
+    // Malformed escape (e.g. a lone "%"): not a file we could have listed.
     return null;
   }
-  let start: number;
-  let end: number;
-  if (match[1] === "") {
-    const suffix = Number(match[2]);
-    start = Math.max(size - suffix, 0);
-    end = size - 1;
-  } else {
-    start = Number(match[1]);
-    end = match[2] === "" ? size - 1 : Math.min(Number(match[2]), size - 1);
-  }
-  return start <= end && start < size ? { start, end } : null;
 }
 
 /**
@@ -37,47 +26,20 @@ async function serve(request: NextRequest, { params }: RouteContext, sendBody: b
     return new NextResponse("Acesso restrito.", { status: 401 });
   }
 
-  const { path: segments } = await params;
-  const relativePath = segments.map(decodeURIComponent).join("/");
-  const file = await resolveExistingLibraryFile(relativePath);
-  const mimeType = getMimeType(relativePath);
+  const relativePath = decodeSegments((await params).path);
+  const file = relativePath ? await resolveExistingLibraryFile(relativePath) : null;
+  const mimeType = relativePath ? getMimeType(relativePath) : null;
   if (!file || !mimeType) {
     return new NextResponse("Arquivo não encontrado.", { status: 404 });
   }
 
-  const headers: Record<string, string> = {
-    "Content-Type": mimeType,
-    "Accept-Ranges": "bytes",
-    "Cache-Control": "private, max-age=3600",
-  };
-
-  const rangeHeader = request.headers.get("range");
-  let status = 200;
-  let start = 0;
-  let end = file.sizeInBytes - 1;
-
-  if (rangeHeader) {
-    const range = parseRange(rangeHeader, file.sizeInBytes);
-    if (!range) {
-      return new NextResponse(null, {
-        status: 416,
-        headers: { ...headers, "Content-Range": `bytes */${file.sizeInBytes}` },
-      });
-    }
-    ({ start, end } = range);
-    status = 206;
-    headers["Content-Range"] = `bytes ${start}-${end}/${file.sizeInBytes}`;
-  }
-  headers["Content-Length"] = String(end - start + 1);
-
-  if (!sendBody || file.sizeInBytes === 0) {
-    return new NextResponse(null, { status, headers });
-  }
-
-  const stream = createReadStream(file.absolutePath, { start, end });
-  // Closing the tab or seeking elsewhere aborts the request: stop reading the disk.
-  request.signal.addEventListener("abort", () => stream.destroy());
-  return new Response(Readable.toWeb(stream) as ReadableStream, { status, headers });
+  return fileResponse(request, {
+    absolutePath: file.absolutePath,
+    sizeInBytes: file.sizeInBytes,
+    mimeType,
+    cacheControl: "private, max-age=3600",
+    sendBody,
+  });
 }
 
 export function GET(request: NextRequest, context: RouteContext) {

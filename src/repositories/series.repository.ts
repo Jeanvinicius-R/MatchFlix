@@ -1,5 +1,6 @@
 import type { AgeRating } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
+import { removeStoredFiles } from "@/lib/storage/local-storage";
 import {
   createImageMedia,
   deleteMediaIfPresent,
@@ -163,6 +164,7 @@ export async function setSeriesImages(
   seriesId: string,
   { posterUrl, backdropUrl }: ImageUrls,
 ): Promise<void> {
+  const orphans: (string | null)[] = [];
   await prisma.$transaction(async (tx) => {
     const current = await tx.series.findUnique({
       where: { id: seriesId },
@@ -175,7 +177,7 @@ export async function setSeriesImages(
         where: { id: seriesId },
         data: { posterMediaId: mediaId },
       });
-      await deleteMediaIfPresent(tx, current?.posterMediaId);
+      orphans.push(await deleteMediaIfPresent(tx, current?.posterMediaId));
     }
     if (backdropUrl) {
       const mediaId = await createImageMedia(tx, "BACKDROP", backdropUrl);
@@ -183,7 +185,8 @@ export async function setSeriesImages(
         where: { id: seriesId },
         data: { backdropMediaId: mediaId },
       });
-      await deleteMediaIfPresent(tx, current?.backdropMediaId);
+      orphans.push(await deleteMediaIfPresent(tx, current?.backdropMediaId));
     }
   });
+  await removeStoredFiles(orphans);
 }

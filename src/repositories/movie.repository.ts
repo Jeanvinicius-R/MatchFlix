@@ -1,5 +1,6 @@
 import type { AgeRating } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
+import { removeStoredFiles } from "@/lib/storage/local-storage";
 import {
   createImageMedia,
   createVideoMedia,
@@ -117,6 +118,7 @@ export async function setMovieVideo(
   movieId: string,
   video: VideoMediaInput,
 ): Promise<void> {
+  const orphans: (string | null)[] = [];
   await prisma.$transaction(async (tx) => {
     const current = await tx.movie.findUnique({
       where: { id: movieId },
@@ -125,11 +127,13 @@ export async function setMovieVideo(
 
     const mediaId = await createVideoMedia(tx, video);
     await tx.movie.update({ where: { id: movieId }, data: { videoMediaId: mediaId } });
-    await deleteMediaIfPresent(tx, current?.videoMediaId);
+    orphans.push(await deleteMediaIfPresent(tx, current?.videoMediaId));
   });
+  await removeStoredFiles(orphans);
 }
 
 export async function clearMovieVideo(movieId: string): Promise<void> {
+  const orphans: (string | null)[] = [];
   await prisma.$transaction(async (tx) => {
     const current = await tx.movie.findUnique({
       where: { id: movieId },
@@ -137,8 +141,9 @@ export async function clearMovieVideo(movieId: string): Promise<void> {
     });
 
     await tx.movie.update({ where: { id: movieId }, data: { videoMediaId: null } });
-    await deleteMediaIfPresent(tx, current?.videoMediaId);
+    orphans.push(await deleteMediaIfPresent(tx, current?.videoMediaId));
   });
+  await removeStoredFiles(orphans);
 }
 
 /**
@@ -149,6 +154,7 @@ export async function setMovieImages(
   movieId: string,
   { posterUrl, backdropUrl }: ImageUrls,
 ): Promise<void> {
+  const orphans: (string | null)[] = [];
   await prisma.$transaction(async (tx) => {
     const current = await tx.movie.findUnique({
       where: { id: movieId },
@@ -158,7 +164,7 @@ export async function setMovieImages(
     if (posterUrl) {
       const mediaId = await createImageMedia(tx, "POSTER", posterUrl);
       await tx.movie.update({ where: { id: movieId }, data: { posterMediaId: mediaId } });
-      await deleteMediaIfPresent(tx, current?.posterMediaId);
+      orphans.push(await deleteMediaIfPresent(tx, current?.posterMediaId));
     }
     if (backdropUrl) {
       const mediaId = await createImageMedia(tx, "BACKDROP", backdropUrl);
@@ -166,7 +172,8 @@ export async function setMovieImages(
         where: { id: movieId },
         data: { backdropMediaId: mediaId },
       });
-      await deleteMediaIfPresent(tx, current?.backdropMediaId);
+      orphans.push(await deleteMediaIfPresent(tx, current?.backdropMediaId));
     }
   });
+  await removeStoredFiles(orphans);
 }
