@@ -180,7 +180,14 @@ export async function saveUpload(
     await fs.rename(temporary, absolute);
     return { storageKey, sizeInBytes: size, mimeType: kind.mimeType };
   } catch (error) {
-    output.destroy();
+    // Wait for the handle to really close (it may still be opening): removing
+    // the file before that would let the pending open re-create it.
+    if (!output.closed) {
+      await new Promise<void>((resolve) => {
+        output.once("close", () => resolve());
+        output.destroy();
+      });
+    }
     await fs.rm(temporary, { force: true });
     throw error;
   }
