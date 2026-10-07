@@ -17,6 +17,10 @@ import type {
  * Base URL without trailing slashes, or null when the env var is empty or not
  * an http(s) URL (so values like "javascript:" or "data:" never reach an iframe).
  */
+export function isAuthorizedProviderEnabled(): boolean {
+  return getBaseUrl() !== null;
+}
+
 function getBaseUrl(): string | null {
   const raw = process.env.PLAYBACK_AUTHORIZED_BASE_URL?.trim();
 

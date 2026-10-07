@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { createSeriesAction, updateSeriesAction } from "@/app/admin/series/actions";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -63,7 +63,7 @@ export function SeriesForm({ mode, series, existingGenres }: SeriesFormProps) {
     register,
     handleSubmit,
     reset,
-    watch,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(
@@ -72,7 +72,7 @@ export function SeriesForm({ mode, series, existingGenres }: SeriesFormProps) {
     defaultValues,
   });
 
-  const watchedGenreNames = watch("genreNames");
+  const watchedGenreNames = useWatch({ control, name: "genreNames" });
   const genreOptions = useMemo(() => {
     const names = new Set(existingGenres.map((genre) => genre.name));
     for (const name of watchedGenreNames ?? []) {

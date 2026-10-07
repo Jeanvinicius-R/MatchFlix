@@ -8,6 +8,7 @@ import {
 export const MOVIE_SELECT = {
   id: true,
   slug: true,
+  tmdbId: true,
   title: true,
   releaseYear: true,
   ageRating: true,
@@ -22,6 +23,7 @@ export const MOVIE_SELECT = {
 export const SERIES_SELECT = {
   id: true,
   slug: true,
+  tmdbId: true,
   title: true,
   releaseYear: true,
   ageRating: true,

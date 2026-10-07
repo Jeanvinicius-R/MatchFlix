@@ -120,6 +120,10 @@ async function listFiles(itemId: string): Promise<VideoSourceFile[]> {
   // The API tags the URL with utm_* tracking params; the bare URL is what we store.
   const url = new URL(info.url);
   url.search = "";
+  // Only Commons' own media host may ever be stored as a playable URL.
+  if (url.protocol !== "https:" || url.hostname !== "upload.wikimedia.org") {
+    return [];
+  }
 
   const sizeInBytes = info.size ?? null;
   return [

@@ -25,7 +25,7 @@ export interface ContentSummary {
   durationInMinutes?: number;
   seasonCount?: number;
   synopsis: string;
-  /** False until at least one video (or, for series, one episode video) is linked. */
+  /** A linked video file, or a playback source known without calling external APIs (see services/playback/availability). */
   hasVideo: boolean;
   genres: Genre[];
   /** Absent until the media pipeline (uploads/CDN) exists; UI falls back to a styled placeholder. */

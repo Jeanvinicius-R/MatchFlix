@@ -1,4 +1,5 @@
 import type { AgeRating as PrismaAgeRating } from "@/generated/prisma/enums";
+import { hasKnownPlaybackSource } from "@/services/playback/availability";
 import type { AgeRating, ContentSummary, Genre } from "@/types/content.types";
 
 /**
@@ -14,6 +15,7 @@ interface MediaRef {
 interface MovieRecord {
   id: string;
   slug: string;
+  tmdbId: number | null;
   title: string;
   releaseYear: number;
   ageRating: PrismaAgeRating;
@@ -28,6 +30,7 @@ interface MovieRecord {
 interface SeriesRecord {
   id: string;
   slug: string;
+  tmdbId: number | null;
   title: string;
   releaseYear: number;
   ageRating: PrismaAgeRating;
@@ -58,7 +61,7 @@ export function mapMovieToContentSummary(movie: MovieRecord): ContentSummary {
     ageRating: AGE_RATING_LABELS[movie.ageRating],
     durationInMinutes: movie.durationInMinutes,
     synopsis: movie.synopsis,
-    hasVideo: movie.videoMediaId !== null,
+    hasVideo: movie.videoMediaId !== null || hasKnownPlaybackSource(movie.tmdbId, "movie"),
     genres: movie.genres,
     posterUrl: movie.poster?.url,
     backdropUrl: movie.backdrop?.url,
@@ -75,7 +78,9 @@ export function mapSeriesToContentSummary(series: SeriesRecord): ContentSummary 
     ageRating: AGE_RATING_LABELS[series.ageRating],
     seasonCount: series._count.seasons,
     synopsis: series.synopsis,
-    hasVideo: series.seasons.some((season) => season.episodes.length > 0),
+    hasVideo:
+      series.seasons.some((season) => season.episodes.length > 0) ||
+      hasKnownPlaybackSource(series.tmdbId, "series"),
     genres: series.genres,
     posterUrl: series.poster?.url,
     backdropUrl: series.backdrop?.url,
