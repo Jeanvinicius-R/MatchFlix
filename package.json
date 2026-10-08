@@ -17,7 +17,10 @@
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "db:seed": "prisma db seed",
-    "docker:up": "docker compose up -d app cloudflared",
+    "docker:up": "docker compose up -d --build",
+    "docker:logs": "docker compose logs -f app",
+    "docker:down": "docker compose down",
+    "docker:tunnel": "docker compose --profile tunnel up -d cloudflared",
     "docker:url": "node scripts/tunnel-url.mjs"
   },
   "dependencies": {

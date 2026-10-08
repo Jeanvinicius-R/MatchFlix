@@ -31,7 +31,7 @@ Plataforma de streaming de filmes e séries em Next.js: catálogo com metadados 
 | Framework    | Next.js 16 (App Router, Turbopack, `output: "standalone"`)                         |
 | Linguagem    | TypeScript (strict)                                                                |
 | Estilo       | Tailwind CSS v4; fontes Inter e Fraunces hospedadas no projeto (`next/font/local`) |
-| Banco        | PostgreSQL (Neon em uso; Postgres local via Docker opcional)                       |
+| Banco        | PostgreSQL 16 em Docker (padrão, LAN); Neon suportado via `DATABASE_DRIVER`        |
 | ORM          | Prisma 7 com driver adapters (`@prisma/adapter-pg` ou `@prisma/adapter-neon`)      |
 | Autenticação | Auth.js / NextAuth v5 (credenciais, sessão JWT) + Argon2id                         |
 | Validação    | Zod (cliente e servidor) + React Hook Form                                         |
@@ -41,21 +41,72 @@ Plataforma de streaming de filmes e séries em Next.js: catálogo com metadados 
 
 ## Instalação e execução local
 
-Requisitos: Node.js 22+ (o modo `neon-ws` usa o WebSocket nativo do Node) e um PostgreSQL.
+O fluxo padrão é **Docker na rede local (LAN)**: aplicação e PostgreSQL em contêineres, acessíveis pelo próprio computador e por outros dispositivos da mesma rede.
+
+### Pré-requisitos
+
+- Docker Desktop (Windows) em execução.
+- Node.js 22+ e npm — usados para instalar dependências, aplicar migrations e rodar os testes.
+
+### Primeira vez
 
 ```bash
-npm install            # instala dependências e roda `prisma generate` (postinstall)
-cp .env.example .env   # cria o .env local a partir do modelo
-npm run dev            # http://localhost:3000
+npm install            # dependências + `prisma generate`
+cp .env.example .env   # .env local (nunca é commitado)
 ```
 
-Antes de subir o servidor, preencha o `.env` ([variáveis](#variáveis-de-ambiente)) e, se o banco for novo/vazio, aplique as migrations ([Banco de dados](#banco-de-dados)). O `.env.example` é o modelo versionado, sem valores reais; o `.env` é a cópia local com as chaves de verdade e **nunca** é commitado.
+No `.env`, gere um `AUTH_SECRET` (`openssl rand -base64 32`) e mantenha `AUTH_TRUST_HOST=true`. O `DATABASE_URL` do exemplo (`localhost:5432`, usuário/senha/banco `aurel`) já corresponde ao Postgres do compose e é o que as ferramentas rodando no Windows usam; dentro do compose o app é apontado automaticamente para o hostname interno `postgres`. `TMDB_ACCESS_TOKEN` é opcional — veja [o que muda sem ele](#sem-token-da-tmdb).
 
-Para ter acesso ao painel, promova um usuário já cadastrado:
-
-```sql
-UPDATE "User" SET role = 'ADMIN' WHERE email = 'seu-email@exemplo.com';
+```bash
+npm run docker:up      # builda e sobe "postgres" + "app" (sem túnel público)
+npm run db:deploy      # banco novo/vazio: aplica as migrations (só as pendentes)
 ```
+
+Para ter acesso ao painel, promova um usuário já cadastrado: `UPDATE "User" SET role = 'ADMIN' WHERE email = 'seu-email@exemplo.com';` (por exemplo com `npm run db:studio`).
+
+### Dia a dia
+
+| Ação                         | Comando                            |
+| ---------------------------- | ---------------------------------- |
+| Subir (ou aplicar mudanças)  | `npm run docker:up`                |
+| Ver o estado e a saúde       | `docker compose ps`                |
+| Acompanhar os logs do app    | `npm run docker:logs` (Ctrl+C sai) |
+| Logs do banco                | `docker compose logs postgres`     |
+| Reiniciar o app              | `docker compose restart app`       |
+| Parar tudo (mantém os dados) | `npm run docker:down`              |
+
+**Nunca** use `docker compose down -v`, `docker volume prune` ou `docker system prune` sem querer apagar os dados: o banco vive no volume `aurel_postgres_data` e os uploads em `matchflix_uploads` (no Docker aparecem com o prefixo do projeto, ex.: `matchflix_aurel_postgres_data`). Eles sobrevivem a `docker:down`, rebuilds e recriação dos contêineres. Backup lógico do banco: `docker exec matchflix-postgres-1 pg_dump -U aurel -d aurel --no-owner > backup.sql` (guarde fora do repositório).
+
+### Acesso
+
+- No próprio computador: **http://localhost:3000**
+- De outro dispositivo na mesma rede: **http://IP-LAN-DO-COMPUTADOR:3000**
+
+Para descobrir o IP LAN (ele muda quando o computador troca de rede ou o DHCP renova), no PowerShell:
+
+```powershell
+Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq 'Up' } | Select-Object InterfaceAlias, @{n='IPv4';e={$_.IPv4Address.IPAddress}}, @{n='Gateway';e={$_.IPv4DefaultGateway.NextHop}}
+```
+
+Use o endereço do adaptador Ethernet/Wi-Fi que tem gateway; ignore VirtualBox (`192.168.56.x`), WSL/Hyper-V (`172.x`) e VPN. O app aceita conexões em todas as interfaces (`0.0.0.0:3000`); o Postgres só no loopback (`127.0.0.1:5432`), nunca na rede.
+
+### Firewall do Windows
+
+Confira o estado com `Get-NetFirewallProfile | Select-Object Name, Enabled` e a categoria da rede com `Get-NetConnectionProfile`. Se o firewall estiver ligado e outros dispositivos não conseguirem abrir o site, crie (em um PowerShell **como administrador**) uma regra de entrada só para a porta 3000, só na rede privada e só da sub-rede local:
+
+```powershell
+New-NetFirewallRule -DisplayName "MatchFlix LAN (TCP 3000)" -Direction Inbound -Protocol TCP -LocalPort 3000 -Action Allow -Profile Private -RemoteAddress LocalSubnet
+```
+
+A regra vale apenas para redes marcadas como **Privada**. Em redes gerenciadas (escola/empresa) a categoria e o firewall costumam ser definidos por política — não desative o firewall; peça ao responsável pela rede. Redes que isolam os clientes entre si (comum em Wi-Fi de visitantes) bloqueiam o acesso de outros dispositivos mesmo com o firewall liberado.
+
+### Sem token da TMDB
+
+Sem `TMDB_ACCESS_TOKEN` o site funciona (login, perfis, catálogo já cadastrado, histórico, uploads, vídeos vinculados e Internet Archive), mas não há busca/importação da TMDB no painel, nem "Onde assistir", nem reimportação de temporadas, e o provider do YouTube não tem o que buscar. O log mostra o aviso `TMDB_ACCESS_TOKEN não está definida` quando uma página tenta usá-la — é esperado.
+
+### Desenvolvimento sem Docker para o app
+
+Com o Postgres do compose rodando (`docker compose up -d postgres`), `npm run dev` sobe o app em modo de desenvolvimento em http://localhost:3000 usando o mesmo `.env`. Pare o contêiner `app` antes (`docker compose stop app`), já que os dois usam a porta 3000.
 
 ## Variáveis de ambiente
 
@@ -96,7 +147,7 @@ npm run db:studio    # explorador visual do banco
 npm run db:seed      # catálogo FICTÍCIO de desenvolvimento (sem tmdbId)
 ```
 
-O Prisma CLI conecta pela porta 5432; `DATABASE_DRIVER="neon-ws"` resolve a **aplicação**, não o CLI — em redes que bloqueiam a 5432, rode migrations de outra rede. Postgres local opcional: `docker compose up -d postgres` (o `DATABASE_URL` do `.env.example` já aponta para ele).
+O Prisma CLI conecta pela porta 5432; `DATABASE_DRIVER="neon-ws"` resolve a **aplicação**, não o CLI — em redes que bloqueiam a 5432, rode migrations de outra rede. No fluxo padrão o banco é o serviço `postgres` do compose (publicado só em `127.0.0.1:5432`), e o `DATABASE_URL` do `.env.example` já aponta para ele.
 
 ## Comandos
 
@@ -110,7 +161,7 @@ O Prisma CLI conecta pela porta 5432; `DATABASE_DRIVER="neon-ws"` resolve a **ap
 | `npm run format`       | Formata com Prettier                                                 |
 | `npm run format:check` | Verifica a formatação                                                |
 
-Servidor de desenvolvimento: ver [Instalação](#instalação-e-execução-local). Banco (`db:*`): ver [Banco de dados](#banco-de-dados). Docker (`docker:*`): ver [Docker + Quick Tunnel](#docker--quick-tunnel-cloudflare).
+Servidor de desenvolvimento: ver [Instalação](#instalação-e-execução-local). Banco (`db:*`): ver [Banco de dados](#banco-de-dados). Docker (`docker:*`): ver [Instalação](#instalação-e-execução-local) e [Cloudflare Quick Tunnel](#cloudflare-quick-tunnel-opcional-url-pública).
 
 ## Autenticação e perfis
 
@@ -208,6 +259,24 @@ Storage **LOCAL** em disco (`MEDIA_UPLOAD_DIR`, padrão `./uploads`, fora do Git
 
 ## Deploy
 
+O uso padrão é o [Docker na LAN](#instalação-e-execução-local). As opções abaixo ficam disponíveis, mas não fazem parte desse fluxo.
+
+### Imagem Docker
+
+A imagem (Node 22, `output: "standalone"`) roda como usuário sem privilégios, não contém `.env` nem uploads (`.dockerignore`) e cria `/app/uploads` vazia, onde o compose monta o volume `matchflix_uploads`. O servidor escuta em `0.0.0.0:3000`. Migrations não rodam ao subir: use `npm run db:deploy`.
+
+### Cloudflare Quick Tunnel (opcional, URL pública)
+
+Só suba se precisar expor o site fora da rede local — ele cria uma URL pública `*.trycloudflare.com`:
+
+```bash
+npm run docker:tunnel   # sobe o serviço "cloudflared" (perfil "tunnel" do compose)
+npm run docker:url      # imprime a URL pública atual
+docker compose stop cloudflared   # fecha o túnel
+```
+
+O Quick Tunnel é gratuito e sem conta, mas a URL muda sempre que o container `cloudflared` é recriado. `npm run docker:up` nunca o inicia.
+
 ### Render
 
 O `render.yaml` (Blueprint: dashboard → **New + → Blueprint**) cria o serviço web (Docker) e um Postgres do Render, ambos no plano grátis (o banco grátis expira em 30 dias; o serviço "dorme" após 15 min). Health check em `/login`.
@@ -219,16 +288,6 @@ Variáveis em **Environment** (o que cada uma faz está em [Variáveis de ambien
 - **Não se aplicam:** `DATABASE_DRIVER` e `MEDIA_LIBRARY_DIR`.
 
 A imagem **não** roda migrations ao subir: aplique-as no banco do Render com `npm run db:deploy`. No plano grátis o disco é efêmero — **uploads somem a cada deploy/reinício**.
-
-### Docker + Quick Tunnel (Cloudflare)
-
-```bash
-docker compose build app   # builda a imagem (Dockerfile da raiz)
-npm run docker:up          # sobe "app" e "cloudflared"
-npm run docker:url         # imprime a URL pública atual
-```
-
-A imagem (Node 22, `output: "standalone"`) roda como usuário sem privilégios, não contém `.env` e cria `/app/uploads` vazia; o `docker-compose.yml` monta o volume `matchflix_uploads` ali para os uploads persistirem. O app lê o `.env` do host. O Quick Tunnel é gratuito, mas a URL muda sempre que o container `cloudflared` é recriado.
 
 ## Solução de problemas
 

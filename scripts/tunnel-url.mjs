@@ -16,7 +16,7 @@ function main() {
     });
   } catch (error) {
     console.error("Não consegui ler os logs do serviço \"cloudflared\".");
-    console.error("Ele está rodando? Tente: docker compose up -d cloudflared");
+    console.error("Ele está rodando? Suba o túnel com: npm run docker:tunnel");
     console.error(error.message);
     process.exit(1);
   }

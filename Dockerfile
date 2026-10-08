@@ -2,8 +2,8 @@
 
 # ---------------------------------------------------------------------------
 # MatchFlix — imagem de produção (Next.js 16, output "standalone").
-# O banco é o Neon (Postgres gerenciado) — este Dockerfile não sobe Postgres;
-# veja docker-compose.yml para o serviço "postgres" opcional de dev local.
+# Só a aplicação: o banco vem do serviço "postgres" do docker-compose.yml
+# (fluxo padrão, LAN) ou de um Postgres externo (Neon/Render) via DATABASE_URL.
 # ---------------------------------------------------------------------------
 
 # ---- deps: só instala dependências (cache separado do código-fonte) ----
@@ -26,8 +26,8 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # DATABASE_URL só precisa EXISTIR para o build não falhar (src/lib/prisma.ts
-# lança erro se a env var estiver ausente) — o Prisma client usa a Neon URL
-# real, injetada em runtime pelo docker-compose, não esta aqui.
+# lança erro se a env var estiver ausente) — o Prisma client usa a URL real,
+# injetada em runtime pelo docker-compose, não esta aqui.
 ARG DATABASE_URL="postgresql://build:build@localhost:5432/build"
 ENV DATABASE_URL=$DATABASE_URL
 ENV NEXT_TELEMETRY_DISABLED=1

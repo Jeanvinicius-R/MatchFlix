@@ -1,12 +1,19 @@
-# "postgres": banco local opcional, só para quem não usa o Neon (ver
-# .env.example). Este projeto roda com o Neon — este serviço fica parado
-# a menos que você rode `docker compose up postgres` explicitamente.
+# MatchFlix na rede local (LAN) — fluxo padrão: `npm run docker:up`.
 #
-# "app": a aplicação MatchFlix em si (Dockerfile na raiz), lendo o .env.
+# "postgres": banco do MatchFlix. Fica na rede interna do compose; a porta
+#   5432 só é publicada no loopback do host (127.0.0.1), para rodar
+#   migrations/Prisma Studio a partir do Windows — nunca para a rede local.
+#   Os dados vivem no volume "aurel_postgres_data" (não apague com `down -v`).
 #
-# "cloudflared": túnel público gratuito (Cloudflare Quick Tunnel) apontando
-# pro serviço "app" — dá uma URL *.trycloudflare.com temporária, sem precisar
-# de conta nem domínio. Veja a URL com: docker compose logs cloudflared
+# "app": a aplicação (Dockerfile na raiz). Publicada na porta 3000 de TODAS as
+#   interfaces do host, então abre em http://localhost:3000 e em
+#   http://<IP-LAN-do-computador>:3000 para outros dispositivos da rede.
+#   Lê o .env, mas a conexão com o banco é forçada para o hostname interno
+#   "postgres" (o DATABASE_URL do .env aponta para localhost, que é o que as
+#   ferramentas rodando no Windows usam).
+#
+# "cloudflared": túnel público opcional (Cloudflare Quick Tunnel). NÃO sobe
+#   por padrão — só com `npm run docker:tunnel` (perfil "tunnel").
 services:
   postgres:
     image: postgres:16-alpine
@@ -16,14 +23,14 @@ services:
       POSTGRES_PASSWORD: aurel
       POSTGRES_DB: aurel
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - aurel_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U aurel"]
+      test: ["CMD-SHELL", "pg_isready -U aurel -d aurel"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   app:
     build:
@@ -32,17 +39,37 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      # Dentro do compose o banco é o serviço "postgres", não localhost.
+      DATABASE_URL: "postgresql://aurel:aurel@postgres:5432/aurel?schema=public"
+      # O banco local é Postgres comum (o modo "neon-ws" é só para o Neon).
+      DATABASE_DRIVER: ""
+      MEDIA_UPLOAD_DIR: /app/uploads
+      AUTH_TRUST_HOST: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
-      # Porta 3001 no host só pra testes locais (curl/navegador); o túnel
-      # Cloudflare acessa o container direto pela rede interna do compose
-      # (http://app:3000), sem depender desta publicação de porta.
-      - "3001:3000"
+      - "3000:3000"
     volumes:
       # Uploads (storage LOCAL) sobrevivem a rebuilds/recriações do container.
       - matchflix_uploads:/app/uploads
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   cloudflared:
     image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
     restart: unless-stopped
     command: tunnel --no-autoupdate --url http://app:3000
     depends_on:

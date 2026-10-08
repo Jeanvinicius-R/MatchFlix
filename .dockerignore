@@ -13,3 +13,9 @@ npm-debug.log*
 *.md
 !README.md
 .dev-server.log
+
+# Dados locais que nunca entram na imagem
+uploads
+movies
+*.sql
+*.dump
