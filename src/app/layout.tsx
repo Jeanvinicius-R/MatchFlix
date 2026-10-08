@@ -1,19 +1,28 @@
 import type { Metadata } from "next";
-import { Fraunces, Inter } from "next/font/google";
+import localFont from "next/font/local";
 import { Footer } from "@/components/layout/Footer";
 import { siteConfig } from "@/config/site.config";
 import { THEME_STORAGE_KEY } from "@/constants/theme.constants";
 import "./globals.css";
 
-const inter = Inter({
+/*
+ * Inter and Fraunces are self-hosted (latin subset, variable woff2 from Google
+ * Fonts, SIL OFL 1.1 — licenses in ./fonts). next/font/google downloads them
+ * at build time, which fails both offline and under Turbopack when the project
+ * path contains spaces; local files make the build deterministic.
+ */
+const inter = localFont({
+  src: "./fonts/inter-latin-variable.woff2",
   variable: "--font-inter",
-  subsets: ["latin"],
+  weight: "100 900",
+  display: "swap",
 });
 
-const fraunces = Fraunces({
+const fraunces = localFont({
+  src: "./fonts/fraunces-latin-variable.woff2",
   variable: "--font-fraunces",
-  subsets: ["latin"],
-  weight: ["500", "600"],
+  weight: "500 600",
+  display: "swap",
 });
 
 export const metadata: Metadata = {

@@ -29,7 +29,11 @@ export interface LibraryFile {
 }
 
 export function getLibraryRoot(): string {
-  return path.resolve(process.env.MEDIA_LIBRARY_DIR?.trim() || DEFAULT_LIBRARY_DIR);
+  // Runtime-configured folder, never part of the build output (see turbopackIgnore).
+  return path.resolve(
+    /*turbopackIgnore: true*/ process.env.MEDIA_LIBRARY_DIR?.trim() ||
+      DEFAULT_LIBRARY_DIR,
+  );
 }
 
 export function getMimeType(fileName: string): string | null {
@@ -68,8 +72,8 @@ export async function resolveExistingLibraryFile(
   }
   try {
     const [realFile, realRoot] = await Promise.all([
-      fs.realpath(resolved),
-      fs.realpath(getLibraryRoot()),
+      fs.realpath(/*turbopackIgnore: true*/ resolved),
+      fs.realpath(/*turbopackIgnore: true*/ getLibraryRoot()),
     ]);
     const relative = path.relative(realRoot, realFile);
     if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {

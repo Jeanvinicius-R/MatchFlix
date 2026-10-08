@@ -50,7 +50,11 @@ export class UploadError extends Error {
 }
 
 export function getUploadRoot(): string {
-  return path.resolve(process.env.MEDIA_UPLOAD_DIR?.trim() || path.join(process.cwd(), "uploads"));
+  // Runtime upload folder, never part of the build output (see turbopackIgnore).
+  return path.resolve(
+    /*turbopackIgnore: true*/ process.env.MEDIA_UPLOAD_DIR?.trim() ||
+      path.join(process.cwd(), "uploads"),
+  );
 }
 
 export function isValidStorageKey(key: string): boolean {
@@ -174,7 +178,10 @@ export async function saveUpload(
       throw new UploadError("Arquivo vazio.");
     }
     if (!matchesSignature(kind.mimeType, head.subarray(0, headLength))) {
-      throw new UploadError("O conteúdo do arquivo não corresponde ao tipo informado.", 415);
+      throw new UploadError(
+        "O conteúdo do arquivo não corresponde ao tipo informado.",
+        415,
+      );
     }
 
     await fs.rename(temporary, absolute);
@@ -194,7 +201,9 @@ export async function saveUpload(
 }
 
 /** Removes stored files; a file that is already gone is not an error. */
-export async function removeStoredFiles(keys: (string | null | undefined)[]): Promise<void> {
+export async function removeStoredFiles(
+  keys: (string | null | undefined)[],
+): Promise<void> {
   await Promise.all(
     keys.map(async (key) => {
       const absolute = key ? resolveStorageKey(key) : null;
@@ -218,7 +227,7 @@ export async function statStoredFile(
     return null;
   }
   try {
-    const stats = await fs.stat(absolutePath);
+    const stats = await fs.stat(/*turbopackIgnore: true*/ absolutePath);
     return stats.isFile() ? { absolutePath, sizeInBytes: stats.size } : null;
   } catch {
     return null;
