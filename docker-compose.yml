@@ -5,6 +5,9 @@
 #   migrations/Prisma Studio a partir do Windows — nunca para a rede local.
 #   Os dados vivem no volume "aurel_postgres_data" (não apague com `down -v`).
 #
+# "migrate": execução única que aplica as migrations pendentes antes do app
+#   subir (`prisma migrate deploy`; não reseta nem apaga dados).
+#
 # "app": a aplicação (Dockerfile na raiz). Publicada na porta 3000 de TODAS as
 #   interfaces do host, então abre em http://localhost:3000 e em
 #   http://<IP-LAN-do-computador>:3000 para outros dispositivos da rede.
@@ -32,6 +35,20 @@ services:
       timeout: 5s
       retries: 10
 
+  # Execução única antes do app: aplica só as migrations pendentes
+  # (`prisma migrate deploy`). Em um banco já atualizado não faz nada.
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migrator
+    environment:
+      DATABASE_URL: "postgresql://aurel:aurel@postgres:5432/aurel?schema=public"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   app:
     build:
       context: .
@@ -49,6 +66,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "3000:3000"
     volumes:

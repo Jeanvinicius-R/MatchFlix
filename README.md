@@ -46,21 +46,24 @@ O fluxo padrão é **Docker na rede local (LAN)**: aplicação e PostgreSQL em c
 ### Pré-requisitos
 
 - Docker Desktop (Windows) em execução.
-- Node.js 22+ e npm — usados para instalar dependências, aplicar migrations e rodar os testes.
+- Node.js 22+ (só para rodar o setup; `npm install` não é necessário para usar o site em Docker — apenas para desenvolver e rodar os testes).
 
-### Primeira vez
-
-```bash
-npm install            # dependências + `prisma generate`
-cp .env.example .env   # .env local (nunca é commitado)
-```
-
-No `.env`, gere um `AUTH_SECRET` (`openssl rand -base64 32`) e mantenha `AUTH_TRUST_HOST=true`. O `DATABASE_URL` do exemplo (`localhost:5432`, usuário/senha/banco `aurel`) já corresponde ao Postgres do compose e é o que as ferramentas rodando no Windows usam; dentro do compose o app é apontado automaticamente para o hostname interno `postgres`. `TMDB_ACCESS_TOKEN` é opcional — veja [o que muda sem ele](#sem-token-da-tmdb).
+### Instalação em outro computador
 
 ```bash
-npm run docker:up      # builda e sobe "postgres" + "app" (sem túnel público)
-npm run db:deploy      # banco novo/vazio: aplica as migrations (só as pendentes)
+git clone https://github.com/Jeanvinicius-R/MatchFlix.git
+cd MatchFlix
+npm run docker:up
 ```
+
+Só isso. O `npm run docker:up`:
+
+1. Roda `scripts/setup-local.mjs`, que, **se não houver `.env`**, cria um a partir do `.env.example` e gera um `AUTH_SECRET` forte. Se o `.env` já existir, nunca o sobrescreve: só preenche `AUTH_SECRET`/`DATABASE_URL` se estiverem vazios e acrescenta variáveis novas do exemplo que faltarem. Ele mostra apenas quais variáveis estão configuradas ou vazias — nunca os valores —, confere se o `.env` está ignorado pelo Git e se o Docker está disponível (se não estiver, avisa e para, sem instalar nada).
+2. Builda a imagem e sobe o PostgreSQL, aplica as migrations pendentes (serviço `migrate`, `prisma migrate deploy` — não reseta nem apaga dados) e sobe o app.
+
+A única configuração manual é a credencial externa opcional da TMDB: crie um "API Read Access Token" em [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api), coloque-o em `TMDB_ACCESS_TOKEN=` no `.env` e recrie o app com `docker compose up -d --no-deps --force-recreate app`. Sem ele o site funciona com limitações ([veja quais](#sem-token-da-tmdb)). O setup pode ser rodado sozinho, sem subir nada, com `npm run setup`.
+
+O `DATABASE_URL` do `.env` (`localhost:5432`, usuário/senha/banco `aurel`) é o que as ferramentas rodando no Windows usam (`npm run db:studio`, `npm run dev`); dentro do compose o app e o `migrate` usam o hostname interno `postgres`.
 
 Para ter acesso ao painel, promova um usuário já cadastrado: `UPDATE "User" SET role = 'ADMIN' WHERE email = 'seu-email@exemplo.com';` (por exemplo com `npm run db:studio`).
 
@@ -147,7 +150,7 @@ npm run db:studio    # explorador visual do banco
 npm run db:seed      # catálogo FICTÍCIO de desenvolvimento (sem tmdbId)
 ```
 
-O Prisma CLI conecta pela porta 5432; `DATABASE_DRIVER="neon-ws"` resolve a **aplicação**, não o CLI — em redes que bloqueiam a 5432, rode migrations de outra rede. No fluxo padrão o banco é o serviço `postgres` do compose (publicado só em `127.0.0.1:5432`), e o `DATABASE_URL` do `.env.example` já aponta para ele.
+O Prisma CLI conecta pela porta 5432; `DATABASE_DRIVER="neon-ws"` resolve a **aplicação**, não o CLI — em redes que bloqueiam a 5432, rode migrations de outra rede. No fluxo padrão o banco é o serviço `postgres` do compose (publicado só em `127.0.0.1:5432`), o `DATABASE_URL` do `.env.example` já aponta para ele e as migrations pendentes são aplicadas pelo serviço `migrate` a cada `npm run docker:up`.
 
 ## Comandos
 
@@ -263,7 +266,7 @@ O uso padrão é o [Docker na LAN](#instalação-e-execução-local). As opçõe
 
 ### Imagem Docker
 
-A imagem (Node 22, `output: "standalone"`) roda como usuário sem privilégios, não contém `.env` nem uploads (`.dockerignore`) e cria `/app/uploads` vazia, onde o compose monta o volume `matchflix_uploads`. O servidor escuta em `0.0.0.0:3000`. Migrations não rodam ao subir: use `npm run db:deploy`.
+A imagem (Node 22, `output: "standalone"`) roda como usuário sem privilégios, não contém `.env` nem uploads (`.dockerignore`) e cria `/app/uploads` vazia, onde o compose monta o volume `matchflix_uploads`. O servidor escuta em `0.0.0.0:3000`. A imagem do app não roda migrations; no compose isso é feito antes pelo serviço `migrate` (estágio `migrator` do Dockerfile). O Prisma Client é gerado dentro do build da imagem, então ela não depende de nada gerado na máquina.
 
 ### Cloudflare Quick Tunnel (opcional, URL pública)
 
@@ -323,7 +326,7 @@ Fluxo: componentes → `services/` → `repositories/` → Prisma. Dados externo
 - **Storage** só LOCAL; no Render grátis os uploads não persistem.
 - **HLS** só nativo (Safari/iOS); nenhum provider atual entrega HLS.
 - **Rate limit de login em memória**: reinicia com o processo e não é compartilhado entre instâncias (adequado a uma instância, como no Render grátis).
-- **Migrations** não rodam automaticamente no deploy.
+- **Migrations** rodam sozinhas no Docker Compose (serviço `migrate`), mas não no Render: lá é preciso `npm run db:deploy`.
 - **Papel ADMIN no JWT**: promover/rebaixar um usuário só vale após novo login.
 
 ## Roteiro

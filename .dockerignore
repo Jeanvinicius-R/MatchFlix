@@ -19,3 +19,4 @@ uploads
 movies
 *.sql
 *.dump
+src/generated

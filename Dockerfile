@@ -19,10 +19,15 @@ COPY prisma ./prisma
 COPY prisma7.config.ts ./
 RUN npm ci
 
-# ---- builder: compila a aplicação ----
-FROM node:22-bookworm-slim AS builder
+# ---- migrator: aplica as migrations versionadas (serviço "migrate" do compose) ----
+# `migrate deploy` só aplica migrations pendentes já commitadas — nunca gera
+# novas, nunca reseta nem apaga dados.
+FROM deps AS migrator
+CMD ["npx", "prisma", "migrate", "deploy"]
+
+# ---- builder: compila a aplicação (parte do deps: OpenSSL + node_modules) ----
+FROM deps AS builder
 WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # DATABASE_URL só precisa EXISTIR para o build não falhar (src/lib/prisma.ts
@@ -32,7 +37,10 @@ ARG DATABASE_URL="postgresql://build:build@localhost:5432/build"
 ENV DATABASE_URL=$DATABASE_URL
 ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN npm run build
+# O Prisma Client é gerado em src/generated/prisma (fora do Git e excluído do
+# contexto pelo .dockerignore), então precisa ser gerado aqui, a partir do
+# schema — senão o build depende de um src/generated que exista na máquina.
+RUN npx prisma generate && npm run build
 
 # ---- runner: imagem final, mínima, sem node_modules completo ----
 FROM node:22-bookworm-slim AS runner
