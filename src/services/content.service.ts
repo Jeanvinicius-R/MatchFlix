@@ -15,14 +15,12 @@ import type { ContentRow, ContentSummary } from "@/types/content.types";
  * regional availability, active/inactive flags) live in one place.
  */
 
-export async function getHeroHighlight(kidsOnly = false): Promise<ContentSummary> {
-  const featured = await findFeaturedContent(kidsOnly);
-
-  if (!featured) {
-    throw new Error("Nenhum conteúdo ativo encontrado para destacar na Home.");
-  }
-
-  return featured;
+/**
+ * Null when nothing can be featured — a fresh install with an empty catalog,
+ * or a kids profile with no title rated "L". The Home shows an empty state then.
+ */
+export function getHeroHighlight(kidsOnly = false): Promise<ContentSummary | null> {
+  return findFeaturedContent(kidsOnly);
 }
 
 export async function getHomeContentRows(kidsOnly = false): Promise<ContentRow[]> {
