@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { AttributionNote } from "@/components/playback/AdaptivePlayer";
 import PlaybackPlayer from "@/components/playback/PlaybackPlayer";
 import type { WatchTarget } from "@/components/playback/playback-target";
 import { cn } from "@/lib/utils";
@@ -12,6 +13,8 @@ interface PlaybackSourcesProps {
   target: WatchTarget;
   resumeAt?: number;
   nextHref?: string;
+  /** Start playing on load (direct/hls sources only). */
+  autoPlay?: boolean;
 }
 
 type LoadState =
@@ -30,18 +33,50 @@ function Placeholder({ children, busy = false }: { children: React.ReactNode; bu
   );
 }
 
+/** Shown when there is nothing (left) to play; `children` say why. */
+function Unavailable({ children }: { children: React.ReactNode }) {
+  return (
+    <Placeholder>
+      <p className="text-base font-semibold tracking-wide">
+        INDISPONÍVEL PARA REPRODUÇÃO
+      </p>
+      {children}
+      <p className="text-sm text-white/70">
+        Veja abaixo, em &quot;Onde assistir&quot;, os serviços que oferecem este título.
+      </p>
+    </Placeholder>
+  );
+}
+
+/** What is said about progress/history for the source being played. */
+function describeProgress(source: PlaybackSource): string {
+  if (source.provider === "youtube") {
+    return " · progresso salvo pela API oficial do player do YouTube";
+  }
+  if (source.type === "direct" || source.type === "hls") {
+    return " · progresso salvo neste player";
+  }
+  if (source.type === "iframe") {
+    return " · o progresso desta fonte não é salvo";
+  }
+  return "";
+}
+
 /**
  * Asks the PlaybackResolver (through the API) which sources exist for a
  * movie/episode, plays the first one and lets the viewer switch between them.
+ * A source the player gives up on is marked as failed and the next one is tried.
  */
 export default function PlaybackSources({
   endpoint,
   target,
   resumeAt = 0,
   nextHref,
+  autoPlay = false,
 }: PlaybackSourcesProps) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [failedIds, setFailedIds] = useState<string[]>([]);
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
@@ -57,6 +92,7 @@ export default function PlaybackSources({
           const sources = data.sources ?? [];
           setState({ status: "ready", sources });
           setSelectedId(sources[0]?.id ?? null);
+          setFailedIds([]);
         }
       })
       .catch((error) => {
@@ -75,6 +111,24 @@ export default function PlaybackSources({
     setState({ status: "loading" });
     setAttempt((value) => value + 1);
   }, []);
+
+  // Marks a source as failed and moves to the next one that has not failed yet
+  // (in list order, wrapping around); none left means "unavailable".
+  const handleFatalError = useCallback(
+    (failedId: string) => {
+      if (state.status !== "ready") {
+        return;
+      }
+      const { sources } = state;
+      const failed = failedIds.includes(failedId) ? failedIds : [...failedIds, failedId];
+      const start = sources.findIndex((source) => source.id === failedId);
+      const ordered = [...sources.slice(start + 1), ...sources.slice(0, start + 1)];
+      const next = ordered.find((source) => !failed.includes(source.id));
+      setFailedIds(failed);
+      setSelectedId(next?.id ?? null);
+    },
+    [state, failedIds],
+  );
 
   if (state.status === "loading") {
     return (
@@ -103,61 +157,89 @@ export default function PlaybackSources({
     );
   }
 
-  if (state.sources.length === 0) {
+  const { sources } = state;
+
+  if (sources.length === 0) {
     return (
-      <Placeholder>
+      <Unavailable>
         <p>Nenhuma fonte de reprodução autorizada está disponível para este título.</p>
-        <p className="text-sm text-white/70">
-          Veja abaixo, em &quot;Onde assistir&quot;, os serviços que oferecem este título.
-        </p>
-      </Placeholder>
+      </Unavailable>
     );
   }
 
-  const selected =
-    state.sources.find((source) => source.id === selectedId) ?? state.sources[0];
+  const selected = sources.find(
+    (source) => source.id === selectedId && !failedIds.includes(source.id),
+  );
 
   return (
     <div className="flex flex-col gap-3">
-      <PlaybackPlayer
-        source={selected}
-        target={target}
-        resumeAt={resumeAt}
-        nextHref={nextHref}
-      />
+      {selected ? (
+        <PlaybackPlayer
+          source={selected}
+          target={target}
+          resumeAt={resumeAt}
+          nextHref={nextHref}
+          autoPlay={autoPlay}
+          // Without another source the overlay only offers the retry it already has.
+          onFatalError={
+            sources.length > 1 ? () => handleFatalError(selected.id) : undefined
+          }
+        />
+      ) : (
+        <Unavailable>
+          <p role="alert">Nenhuma fonte conseguiu reproduzir este vídeo.</p>
+          <button
+            type="button"
+            onClick={() => {
+              setFailedIds([]);
+              setSelectedId(sources[0].id);
+            }}
+            className="rounded bg-white/10 px-4 py-2 transition-colors hover:bg-white/20"
+          >
+            Tentar de novo
+          </button>
+        </Unavailable>
+      )}
 
-      {state.sources.length > 1 && (
+      {sources.length > 1 && (
         <div role="group" aria-label="Fontes de reprodução" className="flex flex-wrap gap-2">
-          {state.sources.map((source) => {
-            const isSelected = source.id === selected.id;
+          {sources.map((source) => {
+            const isSelected = source.id === selected?.id;
+            const hasFailed = failedIds.includes(source.id);
             return (
               <button
                 key={source.id}
                 type="button"
                 aria-pressed={isSelected}
-                onClick={() => setSelectedId(source.id)}
+                onClick={() => {
+                  setFailedIds((ids) => ids.filter((id) => id !== source.id));
+                  setSelectedId(source.id);
+                }}
                 className={cn(
                   "rounded px-4 py-2 text-sm transition-colors",
                   isSelected
                     ? "bg-accent text-accent-foreground"
                     : "bg-tint/10 text-foreground hover:bg-tint/20",
+                  hasFailed && "line-through opacity-60",
                 )}
               >
                 {source.label ?? source.provider}
+                {hasFailed && <span className="sr-only"> (falhou)</span>}
               </button>
             );
           })}
         </div>
       )}
 
-      <p className="text-muted-foreground text-xs">
-        Fonte: {selected.label ?? selected.provider}
-        {selected.provider === "youtube"
-          ? " · progresso salvo pela API oficial do player do YouTube"
-          : selected.type === "iframe"
-            ? " · o progresso desta fonte não é salvo"
-            : ""}
-      </p>
+      {selected && (
+        <>
+          <p className="text-muted-foreground text-xs">
+            Fonte: {selected.label ?? selected.provider}
+            {describeProgress(selected)}
+          </p>
+          <AttributionNote attribution={selected.attribution} />
+        </>
+      )}
     </div>
   );
 }

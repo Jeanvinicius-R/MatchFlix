@@ -7,6 +7,7 @@ const ADMIN_NAV_LINKS = [
   { href: "/admin/movies", label: "Filmes" },
   { href: "/admin/series", label: "Séries" },
   { href: "/admin/genres", label: "Gêneros" },
+  { href: "/admin/playback", label: "Reprodução" },
 ];
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {

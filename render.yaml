@@ -60,3 +60,9 @@ services:
         sync: false
       - key: YOUTUBE_ALLOWED_CHANNEL_IDS
         sync: false
+      # Instâncias do PeerTube permitidas (hosts separados por vírgula, ex.:
+      # framatube.org,video.blender.org). Vazio = adaptador desativado. A lista
+      # é decisão de quem opera o site; os vídeos ainda dependem de associação
+      # VERIFIED feita no /admin.
+      - key: PEERTUBE_ALLOWED_INSTANCES
+        sync: false

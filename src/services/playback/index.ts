@@ -9,12 +9,26 @@ import {
   getSeasonDetails,
   getSeriesDetails,
 } from "@/services/tmdb/tmdb.service";
+import { findPlayableCandidates } from "@/repositories/playback-association.repository";
+import { adapters } from "./adapters/registry";
 import { createPlaybackResolver } from "./playback.resolver";
 import { authorizedProvider } from "./providers/authorized.provider";
+import { createAssociationProvider } from "./providers/association.provider";
 import { internetArchiveProvider } from "./providers/internet-archive.provider";
 import { youtubeProvider } from "./providers/youtube.provider";
 
+// One provider per adapter, fed by the admin-managed PlaybackAssociation table.
+// They only play associations marked VERIFIED, so they go first: a verified
+// direct/HLS source is a better default than an embedded iframe.
+const associationProviders: PlaybackProvider[] = adapters.map((adapter) =>
+  createAssociationProvider({
+    adapter,
+    repository: { findPlayableCandidates },
+  }),
+);
+
 const providers: PlaybackProvider[] = [
+  ...associationProviders,
   authorizedProvider,
   internetArchiveProvider,
   youtubeProvider,

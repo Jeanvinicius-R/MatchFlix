@@ -99,6 +99,7 @@ export default async function WatchSeriesPage({
                 endpoint={`/api/playback/tv/${series.tmdbId}/${current.seasonNumber}/${current.episodeNumber}`}
                 target={{ kind: "episode", contentId: current.id }}
                 resumeAt={resumeAt}
+                autoPlay={auto === "1"}
                 nextHref={next ? episodeHref(next.id, true) : undefined}
               />
             )}

@@ -3,6 +3,7 @@ import type {
   PlaybackProvider,
   PlaybackSource,
 } from "./playback.types";
+import { describeSourceProblem, sanitizeSource } from "./source-guard";
 
 /** A provider that hangs (or is just slow) never blocks the others. */
 const PROVIDER_TIMEOUT_MS = 5_000;
@@ -68,7 +69,17 @@ function createCollector(providers: PlaybackProvider[]) {
       }
 
       if (result.value !== null) {
-        sources.push(result.value);
+        // Last line of defense: whatever a provider returns is re-checked here.
+        const safe = sanitizeSource(result.value);
+
+        if (safe) {
+          sources.push(safe);
+        } else {
+          console.warn(
+            `Provider de playback "${providers[index].id}" devolveu uma fonte descartada:`,
+            describeSourceProblem(result.value),
+          );
+        }
       }
     });
 

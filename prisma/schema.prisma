@@ -51,6 +51,37 @@ enum StorageProvider {
   TMDB
 }
 
+// Camada de associações: liga um título/episódio do TMDB a um asset de um
+// provedor de vídeo AUTORIZADO. O catálogo (TMDB) e a reprodução são
+// separados: nada aqui vem do TMDB além do id.
+enum AssociationMediaType {
+  MOVIE
+  EPISODE
+}
+
+// Formato esperado da fonte (dica; o adaptador confirma na resolução).
+enum PlaybackFormat {
+  MP4
+  HLS
+  DASH
+  EMBED
+}
+
+// Decisão ADMINISTRATIVA sobre o direito de exibir o asset. Só VERIFIED toca;
+// qualquer outro valor (inclusive o padrão UNVERIFIED) falha fechado.
+enum RightsStatus {
+  UNVERIFIED
+  VERIFIED
+  EXPIRED
+  REVOKED
+}
+
+enum AvailabilityStatus {
+  UNKNOWN
+  AVAILABLE
+  UNAVAILABLE
+}
+
 model User {
   id           String   @id @default(uuid()) @db.Uuid
   email        String   @unique
@@ -216,6 +247,34 @@ model Episode {
   watchProgress WatchProgress[]
 
   @@unique([seasonId, episodeNumber])
+}
+
+// Associação TMDB -> asset de um provedor autorizado (ver enums acima).
+// Filme: seasonNumber = 0 e episodeNumber = 0. Episódio: a tripla
+// (tmdbId da SÉRIE, temporada, episódio). Os zeros existem porque, no
+// Postgres, NULL nunca é "igual" em índice único — com colunas anuláveis o
+// mesmo asset poderia ser cadastrado duas vezes.
+model PlaybackAssociation {
+  id                 String               @id @default(uuid()) @db.Uuid
+  tmdbId             Int
+  mediaType          AssociationMediaType
+  seasonNumber       Int                  @default(0)
+  episodeNumber      Int                  @default(0)
+  /// Id do adaptador (ex.: "archive", "peertube"); precisa existir no registro.
+  provider           String
+  /// Identificador no provedor (formato definido por cada adaptador).
+  providerAssetId    String
+  playbackType       PlaybackFormat?
+  rightsStatus       RightsStatus         @default(UNVERIFIED)
+  /// Prova/origem da autorização (licença, contrato, URL oficial).
+  licenseReference   String?
+  availabilityStatus AvailabilityStatus   @default(UNKNOWN)
+  lastVerifiedAt     DateTime?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  @@unique([tmdbId, mediaType, seasonNumber, episodeNumber, provider, providerAssetId], map: "PlaybackAssociation_asset_key")
+  @@index([tmdbId, mediaType, seasonNumber, episodeNumber], map: "PlaybackAssociation_lookup_idx")
 }
 
 // Append-only log of playback sessions, used for "assistidos recentemente"
