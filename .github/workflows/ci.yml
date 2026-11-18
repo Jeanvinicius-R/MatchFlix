@@ -28,7 +28,7 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
-      - name: Formatação (prettier) — só aviso: há código antigo fora do padrão
+      - name: "Formatação (prettier): só aviso, há código antigo fora do padrão"
         run: |
           FILES="$(npx prettier --list-different . || true)"
           if [ -n "$FILES" ]; then
