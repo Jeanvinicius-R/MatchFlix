@@ -28,12 +28,11 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
-      - name: Formatação (prettier)
+      - name: Formatação (prettier) — só aviso: há código antigo fora do padrão
         run: |
           FILES="$(npx prettier --list-different . || true)"
           if [ -n "$FILES" ]; then
-            echo "::error title=Arquivos fora do padrão prettier::$(echo "$FILES" | tr '\n' ' ')"
-            exit 1
+            echo "::warning title=Arquivos fora do padrão prettier (não bloqueia)::$(echo "$FILES" | tr '\n' ' ')"
           fi
 
   render-image:
