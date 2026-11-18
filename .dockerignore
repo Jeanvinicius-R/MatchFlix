@@ -20,3 +20,7 @@ movies
 *.sql
 *.dump
 src/generated
+
+# App Android: build próprio (mobile/Dockerfile), fora da imagem do site
+mobile
+.github

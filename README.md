@@ -19,6 +19,7 @@ Plataforma de streaming de filmes e séries em Next.js: catálogo com metadados 
 - [Uploads e armazenamento](#uploads-e-armazenamento)
 - [Segurança](#segurança)
 - [Deploy](#deploy)
+- [App Android (APK)](#app-android-apk)
 - [Solução de problemas](#solução-de-problemas)
 - [Estrutura de diretórios](#estrutura-de-diretórios)
 - [Limitações conhecidas](#limitações-conhecidas)
@@ -291,6 +292,28 @@ Variáveis em **Environment** (o que cada uma faz está em [Variáveis de ambien
 - **Não se aplicam:** `DATABASE_DRIVER` e `MEDIA_LIBRARY_DIR`.
 
 A imagem **não** roda migrations ao subir: aplique-as no banco do Render com `npm run db:deploy`. No plano grátis o disco é efêmero — **uploads somem a cada deploy/reinício**.
+
+## App Android (APK)
+
+A pasta [`mobile/`](mobile) é uma casca Android (Capacitor) que abre o **seu servidor MatchFlix** num WebView nativo, com ícone e tela de abertura próprios. O app em si continua sendo o site: o APK não contém catálogo nem banco, então **o servidor precisa estar rodando** (Docker na LAN, túnel ou Render).
+
+Na primeira abertura o app pergunta o endereço do servidor (ex.: `http://192.168.0.10:3000` na LAN, ou `https://seu-dominio`) e o guarda no aparelho. Se o servidor não responder, aparece uma tela com "Tentar novamente" e "Trocar endereço do servidor". Para trocar o endereço de outro jeito, limpe os dados do app nas configurações do Android.
+
+### Gerar o APK
+
+- **GitHub Actions (não instala nada):** em **Actions → Android APK → Run workflow**; ao terminar, baixe `MatchFlix-apk` em _Artifacts_. Um push de tag `apk-v*` (ex.: `apk-v0.1.0`) também publica o APK num Release.
+- **Docker (local):** `npm run apk:docker` → `mobile/dist/MatchFlix.apk`. A primeira execução baixa ~2–3 GB (SDK Android + Gradle).
+- **Sem Docker:** com Node 20+, JDK 21 e Android SDK (platform 35) instalados, `bash mobile/scripts/build-apk.sh`.
+
+### Instalar no Android
+
+Copie o `MatchFlix.apk` para o celular (ou abra o link do Release) e instale permitindo "instalar apps de fontes desconhecidas". É um APK **debug**, assinado com a chave de debug: serve para instalar em aparelhos próprios, não para a Play Store (que exige APK/AAB release assinado com a sua chave).
+
+### Observações
+
+- O Android 9+ bloqueia HTTP puro; o build habilita `usesCleartextTraffic` para o servidor na LAN (HTTP). Com HTTPS (túnel/Render) isso não é necessário, mas é inofensivo.
+- O IP da LAN muda quando o roteador renova o DHCP; reserve um IP fixo para o computador no roteador (ou use um domínio) para não precisar trocar o endereço no app.
+- Você pode instalar o site também como PWA pelo Chrome ("Adicionar à tela inicial"), mas isso não gera APK e exige HTTPS para ser instalável.
 
 ## Solução de problemas
 

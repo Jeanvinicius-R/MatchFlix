@@ -5,3 +5,8 @@ build
 out
 package-lock.json
 src/generated
+
+# App Android (mobile/): dependências e artefatos gerados
+mobile/node_modules
+mobile/android
+mobile/dist
