@@ -28,7 +28,13 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
-      - run: npm run format:check
+      - name: Formatação (prettier)
+        run: |
+          FILES="$(npx prettier --list-different . || true)"
+          if [ -n "$FILES" ]; then
+            echo "::error title=Arquivos fora do padrão prettier::$(echo "$FILES" | tr '\n' ' ')"
+            exit 1
+          fi
 
   render-image:
     runs-on: ubuntu-24.04
