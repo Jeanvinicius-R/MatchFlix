@@ -1,0 +1,11 @@
+{
+  "appId": "br.com.matchflix.app",
+  "appName": "MatchFlix",
+  "webDir": "www",
+  "backgroundColor": "#070807",
+  "server": {
+    "cleartext": true,
+    "allowNavigation": ["*"],
+    "errorPath": "error.html"
+  }
+}

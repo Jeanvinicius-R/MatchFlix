@@ -22,7 +22,8 @@
     "docker:logs": "docker compose logs -f app",
     "docker:down": "docker compose down",
     "docker:tunnel": "docker compose --profile tunnel up -d cloudflared",
-    "docker:url": "node scripts/tunnel-url.mjs"
+    "docker:url": "node scripts/tunnel-url.mjs",
+    "apk:docker": "docker build --target apk --output type=local,dest=mobile/dist mobile"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",

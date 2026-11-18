@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="dark" />
+    <title>MatchFlix — sem conexão</title>
+    <style>
+      :root {
+        --bg: #070807;
+        --fg: #f4f4f5;
+        --muted: #a1a1aa;
+        --accent: #22c55e;
+        --accent-fg: #03140a;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: var(--bg);
+        color: var(--fg);
+        font-family:
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+      }
+      main {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 1rem;
+        max-width: 28rem;
+        margin: 0 auto;
+        padding: 1.5rem 1.25rem;
+      }
+      h1 {
+        margin: 0;
+        font-size: 1.5rem;
+      }
+      p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+      #target {
+        word-break: break-all;
+        color: var(--fg);
+      }
+      button {
+        width: 100%;
+        padding: 0.9rem;
+        font-size: 1rem;
+        font-weight: 600;
+        border-radius: 0.6rem;
+        border: 1px solid var(--accent);
+        color: var(--accent);
+        background: transparent;
+      }
+      button.primary {
+        color: var(--accent-fg);
+        background: var(--accent);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Não foi possível conectar</h1>
+      <p>
+        O servidor <span id="target">salvo</span> não respondeu. Confira se o computador
+        com o MatchFlix está ligado, se o celular está no mesmo Wi-Fi (rede local) e se o
+        endereço não mudou.
+      </p>
+      <button id="retry" class="primary" type="button">Tentar novamente</button>
+      <button id="change" type="button">Trocar endereço do servidor</button>
+    </main>
+
+    <script>
+      (function () {
+        var KEY = "matchflix.serverUrl";
+        var saved = "";
+        try {
+          saved = localStorage.getItem(KEY) || "";
+        } catch (e) {
+          /* ignore */
+        }
+
+        if (saved) document.getElementById("target").textContent = saved;
+
+        document.getElementById("retry").addEventListener("click", function () {
+          if (saved) window.location.replace(saved);
+          else window.location.replace("index.html?change=1");
+        });
+        document.getElementById("change").addEventListener("click", function () {
+          window.location.replace("index.html?change=1");
+        });
+      })();
+    </script>
+  </body>
+</html>

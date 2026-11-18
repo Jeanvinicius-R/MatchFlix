@@ -1,0 +1,51 @@
+name: Android APK
+
+# Gera o APK do MatchFlix (casca Capacitor em mobile/).
+# - Manual: Actions > "Android APK" > Run workflow  -> baixe o APK em "Artifacts".
+# - Tag `apk-v*` (ex.: apk-v0.1.0): além do artefato, publica um Release com o APK.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "apk-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write # necessário só para criar o Release em tags
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Instalar plataforma e build-tools do Android
+        run: sdkmanager "platforms;android-35" "build-tools;34.0.0"
+
+      - name: Compilar APK
+        run: bash mobile/scripts/build-apk.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MatchFlix-apk
+          path: mobile/dist/MatchFlix.apk
+          if-no-files-found: error
+
+      - name: Publicar Release (somente em tag)
+        if: startsWith(github.ref, 'refs/tags/apk-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" mobile/dist/MatchFlix.apk --title "MatchFlix Android $GITHUB_REF_NAME" --generate-notes
