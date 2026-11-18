@@ -1,7 +1,9 @@
+import { isBootstrapAdminEmail } from "@/lib/admin-bootstrap";
 import { isRateLimited, resetRateLimit } from "@/lib/rate-limit";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import {
   createUser,
+  existsAdminUser,
   existsUserWithEmail,
   findUserByEmail,
   findUserById,
@@ -69,7 +71,12 @@ export async function registerUser(
   }
 
   const passwordHash = await hashPassword(input.password);
-  return createUser({ name: input.name, email: input.email, passwordHash });
+  const role =
+    isBootstrapAdminEmail(input.email, process.env.ADMIN_EMAIL) &&
+    !(await existsAdminUser())
+      ? "ADMIN"
+      : "USER";
+  return createUser({ name: input.name, email: input.email, passwordHash, role });
 }
 
 export async function verifyCredentials(

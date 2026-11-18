@@ -1,0 +1,39 @@
+name: CI
+
+# Valida o site a cada push/PR: lint, typecheck, testes, formatação e o build
+# real da imagem do Render (Dockerfile.render).
+on:
+  push:
+    branches: [master, "feat/**", "fix/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      # Só precisa existir para o build/geração do Prisma; nenhum teste conecta ao banco.
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run format:check
+
+  render-image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build da imagem do Render (sem publicar)
+        run: docker build -f Dockerfile.render -t matchflix-render .

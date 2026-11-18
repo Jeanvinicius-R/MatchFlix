@@ -122,6 +122,7 @@ Só `NEXT_PUBLIC_APP_NAME` chega ao navegador; todas as outras são lidas apenas
 | `DATABASE_DRIVER`              | Não         | `"neon-ws"` conecta ao Neon por WebSocket (porta 443), para redes que bloqueiam a porta 5432. Vazio = conexão Postgres normal.                                        |
 | `AUTH_SECRET`                  | Sim         | Segredo do Auth.js (`openssl rand -base64 32`). Trocar o valor encerra todas as sessões.                                                                              |
 | `AUTH_TRUST_HOST`              | Produção    | `true` ao rodar o build de produção, atrás de proxy ou acessando por IP/domínio — sem ele o login falha com `UntrustedHost`.                                          |
+| `ADMIN_EMAIL`                  | Opcional    | Quem se cadastrar com este e-mail vira ADMIN, só enquanto não existir nenhum admin (útil no Render, sem acesso ao banco). O e-mail não é verificado.                  |
 | `NEXT_PUBLIC_APP_NAME`         | Não         | Nome público do site.                                                                                                                                                 |
 | `TMDB_ACCESS_TOKEN`            | Recomendado | "API Read Access Token" da TMDB (Configurações → API em themoviedb.org). Sem ele: sem busca/importação no painel, sem "Onde assistir" e sem metadados para o YouTube. |
 | `MEDIA_LIBRARY_DIR`            | Não         | Pasta com seus próprios vídeos ("Meus arquivos"). Vazio = `./movies`.                                                                                                 |
@@ -288,10 +289,20 @@ O `render.yaml` (Blueprint: dashboard → **New + → Blueprint**) cria o servi�
 Variáveis em **Environment** (o que cada uma faz está em [Variáveis de ambiente](#variáveis-de-ambiente)):
 
 - **Preenchidas pelo Blueprint:** `DATABASE_URL` (banco do Render — para usar o Neon, troque pela connection string do Neon), `AUTH_SECRET` (gerada), `AUTH_TRUST_HOST`, `NEXT_PUBLIC_APP_NAME`.
-- **Declaradas sem valor (`sync: false`), preencher no painel:** `TMDB_ACCESS_TOKEN`; opcionais `PLAYBACK_AUTHORIZED_BASE_URL`, `YOUTUBE_API_KEY` e `YOUTUBE_ALLOWED_CHANNEL_IDS`.
+- **Declaradas sem valor (`sync: false`), preencher no painel:** `ADMIN_EMAIL` e `TMDB_ACCESS_TOKEN`; opcionais `PLAYBACK_AUTHORIZED_BASE_URL`, `YOUTUBE_API_KEY` e `YOUTUBE_ALLOWED_CHANNEL_IDS`.
 - **Não se aplicam:** `DATABASE_DRIVER` e `MEDIA_LIBRARY_DIR`.
 
-A imagem **não** roda migrations ao subir: aplique-as no banco do Render com `npm run db:deploy`. No plano grátis o disco é efêmero — **uploads somem a cada deploy/reinício**.
+O Blueprint usa o [`Dockerfile.render`](Dockerfile.render), que **aplica as migrations pendentes antes de subir o servidor** (`prisma migrate deploy`; nunca apaga dados) — no plano grátis o Render não tem "pre-deploy command". Se a migration falhar, o deploy falha em vez de subir com o banco quebrado. No plano grátis o disco é efêmero — **uploads somem a cada deploy/reinício**.
+
+#### Passo a passo (do zero até ver o site)
+
+1. No dashboard do Render: **New + → Blueprint**, escolha este repositório e a branch (ex.: `master`). Quando pedir os valores `sync: false`, preencha **`ADMIN_EMAIL`** (seu e-mail) e **`TMDB_ACCESS_TOKEN`** (ver [Catálogo, TMDB](#catálogo-tmdb-e-onde-assistir)); os demais podem ficar vazios.
+2. Aguarde o build (alguns minutos). A URL fica em `https://matchflix-xxxx.onrender.com`.
+3. Abra `/signup` e cadastre-se **com o e-mail do `ADMIN_EMAIL`**: essa conta vira ADMIN (somente enquanto não existir nenhum admin; o e-mail não é verificado, então faça isso logo após o deploy). Se você já tinha se cadastrado antes de definir `ADMIN_EMAIL`, a promoção não acontece — nesse caso promova no banco.
+4. Entre em `/admin` e importe filmes/séries pela TMDB. Sem título cadastrado a Home fica vazia.
+5. No app Android, use essa URL `https://...onrender.com` como endereço do servidor.
+
+O serviço grátis "dorme" após 15 min sem acesso (a primeira abertura depois disso demora ~1 min) e o banco grátis expira em 30 dias.
 
 ## App Android (APK)
 

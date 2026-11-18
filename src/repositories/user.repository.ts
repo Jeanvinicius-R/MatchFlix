@@ -28,10 +28,15 @@ export function existsUserWithEmail(email: string): Promise<boolean> {
   return prisma.user.count({ where: { email } }).then((count) => count > 0);
 }
 
+export function existsAdminUser(): Promise<boolean> {
+  return prisma.user.count({ where: { role: "ADMIN" } }).then((count) => count > 0);
+}
+
 interface CreateUserInput {
   name: string;
   email: string;
   passwordHash: string;
+  role?: "USER" | "ADMIN";
 }
 
 export function createUser(input: CreateUserInput): Promise<{ id: string }> {
