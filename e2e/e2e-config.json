@@ -1,0 +1,27 @@
+{
+  "baseUrl": "http://127.0.0.1:3000",
+  "mock": {
+    "host": "127.0.0.1",
+    "port": 8099,
+    "xtreamUser": "e2e_xt_user_7f3a",
+    "xtreamPass": "e2e_xt_pass_9c1d",
+    "m3uUser": "e2e_m3u_user_4b8e",
+    "m3uPass": "e2e_m3u_pass_2d6f"
+  },
+  "admin": {
+    "email": "e2e-admin@matchflix.test",
+    "password": "e2e-Senha-Forte-2026!",
+    "name": "Admin E2E"
+  },
+  "licenseReference": "TESTE E2E — conteúdo CC BY da Blender Foundation (Big Buck Bunny)",
+  "titles": {
+    "archive": { "tmdbId": 10378, "slug": "e2e-archive-big-buck-bunny", "title": "Big Buck Bunny (Archive)" },
+    "xtream": { "tmdbId": 900001, "slug": "e2e-xtream-big-buck-bunny", "title": "Big Buck Bunny (Xtream mock)" },
+    "m3u": { "tmdbId": 900002, "slug": "e2e-m3u-big-buck-bunny", "title": "Big Buck Bunny (M3U mock)" },
+    "none": { "tmdbId": 900003, "slug": "e2e-sem-associacao", "title": "Título sem associação" },
+    "revoked": { "tmdbId": 900004, "slug": "e2e-associacao-revogada", "title": "Big Buck Bunny (revogado)" },
+    "blocked": { "tmdbId": 900005, "slug": "e2e-servidor-bloqueado", "title": "Big Buck Bunny (servidor bloqueado)" },
+    "unverified": { "tmdbId": 900006, "slug": "e2e-nao-verificado", "title": "Big Buck Bunny (não verificado)" },
+    "peertube": { "tmdbId": 900007, "slug": "e2e-peertube-real", "title": "PeerTube (descoberto em runtime)" }
+  }
+}
