@@ -65,7 +65,7 @@ const NOISE_TAG =
 /** Everything that is not a letter or digit (built at runtime: needs \p, newer than the TS target). */
 const NON_ALPHANUMERIC = new RegExp("[^\\p{L}\\p{N}]+", "gu");
 
-function stripTrailingNoise(text: string): string {
+export function stripTrailingNoise(text: string): string {
   let value = text.trim();
 
   for (;;) {

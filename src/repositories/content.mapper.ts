@@ -1,5 +1,4 @@
 import type { AgeRating as PrismaAgeRating } from "@/generated/prisma/enums";
-import { hasKnownPlaybackSource } from "@/services/playback/availability";
 import type { PlayableLookup } from "@/services/playback/playable-titles";
 import type { AgeRating, ContentSummary, Genre } from "@/types/content.types";
 
@@ -54,8 +53,9 @@ export const AGE_RATING_LABELS: Record<PrismaAgeRating, AgeRating> = {
 
 /**
  * `playable` carries the titles with a CONFIRMED association (VERIFIED, found
- * AVAILABLE recently). Without it (not loaded, or the database failed) the
- * card keeps the previous rule: a linked file or a statically known source.
+ * AVAILABLE recently). A card shows "has video" only for a linked local file
+ * or a CONFIRMED title; without the lookup (database failed) it fails closed.
+ * Curated open films reach CONFIRMED through their seeded associations.
  */
 export function mapMovieToContentSummary(
   movie: MovieRecord,
@@ -73,7 +73,6 @@ export function mapMovieToContentSummary(
     synopsis: movie.synopsis,
     hasVideo:
       movie.videoMediaId !== null ||
-      hasKnownPlaybackSource(movie.tmdbId, "movie") ||
       playable?.hasMovie(movie.tmdbId) === true,
     genres: movie.genres,
     posterUrl: movie.poster?.url,
@@ -97,7 +96,6 @@ export function mapSeriesToContentSummary(
     synopsis: series.synopsis,
     hasVideo:
       series.seasons.some((season) => season.episodes.length > 0) ||
-      hasKnownPlaybackSource(series.tmdbId, "series") ||
       playable?.hasSeries(series.tmdbId) === true,
     genres: series.genres,
     posterUrl: series.poster?.url,

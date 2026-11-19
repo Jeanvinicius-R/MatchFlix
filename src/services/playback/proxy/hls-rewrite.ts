@@ -22,6 +22,38 @@ export interface HlsRewriteOptions {
   allowedOrigins: readonly string[];
   /** Turns an allowed, absolute upstream URL into what the player must request. */
   rewriteUrl(absoluteUrl: string): string;
+  /** Most URIs one manifest may carry (default MAX_MANIFEST_URIS). */
+  maxUris?: number;
+  /** Most characters the rewritten manifest may have (default MAX_REWRITTEN_CHARS). */
+  maxOutputChars?: number;
+}
+
+/** Every URI costs one encrypted token: a hostile manifest must not make millions. */
+export const MAX_MANIFEST_URIS = 20_000;
+export const MAX_REWRITTEN_CHARS = 8 * 1024 * 1024;
+
+/**
+ * Tags whose URLs the player would fetch by itself (HLS content steering) and
+ * attributes other than URI that carry a fetchable URL (interstitials:
+ * X-ASSET-URI / X-ASSET-LIST, SERVER-URI ...). They cannot be routed through the
+ * proxy token safely, so a manifest using them is refused whole.
+ */
+const FORBIDDEN_TAGS: ReadonlySet<string> = new Set(["EXT-X-CONTENT-STEERING"]);
+
+function findForbiddenAttribute(tagName: string, attributes: string): string | null {
+  if (FORBIDDEN_TAGS.has(tagName)) {
+    return tagName;
+  }
+
+  for (const match of attributes.matchAll(ATTRIBUTE_PATTERN)) {
+    const name = match[1].toUpperCase();
+
+    if (name === "X-ASSET-LIST" || (name !== "URI" && name.endsWith("URI"))) {
+      return name;
+    }
+  }
+
+  return null;
 }
 
 const MANIFEST_MEDIA_TYPES: ReadonlySet<string> = new Set([
@@ -70,9 +102,20 @@ export function rewriteHlsManifest(
   }
 
   const state: { failure: string | null } = { failure: null };
+  const maxUris = options.maxUris ?? MAX_MANIFEST_URIS;
+  const maxOutputChars = options.maxOutputChars ?? MAX_REWRITTEN_CHARS;
+  let uriCount = 0;
+  let outputChars = 0;
 
   /** The rewritten URL for one URI of the manifest, or null (failure recorded). */
   function rewriteUri(raw: string): string | null {
+    uriCount += 1;
+
+    if (uriCount > maxUris) {
+      state.failure ??= "O manifesto tem URIs demais.";
+      return null;
+    }
+
     const value = raw.trim();
 
     if (value === "") {
@@ -126,7 +169,24 @@ export function rewriteHlsManifest(
     } else if (trimmed.startsWith("#")) {
       const colon = trimmed.indexOf(":");
 
-      if (colon === -1 || !trimmed.includes("URI=")) {
+      if (colon === -1) {
+        output.push(trimmed);
+        continue;
+      }
+
+      const forbidden = findForbiddenAttribute(
+        trimmed.slice(1, colon).trim().toUpperCase(),
+        trimmed.slice(colon + 1),
+      );
+
+      if (forbidden !== null) {
+        return {
+          ok: false,
+          reason: `O manifesto usa ${forbidden}, que o player buscaria fora do proxy.`,
+        };
+      }
+
+      if (!trimmed.toUpperCase().includes("URI=")) {
         output.push(trimmed);
         continue;
       }
@@ -135,7 +195,7 @@ export function rewriteHlsManifest(
       const attributes = trimmed
         .slice(colon + 1)
         .replace(ATTRIBUTE_PATTERN, (match, name: string, value: string) => {
-          if (name !== "URI") {
+          if (name.toUpperCase() !== "URI") {
             return match;
           }
 
@@ -155,6 +215,12 @@ export function rewriteHlsManifest(
 
     if (state.failure !== null) {
       return { ok: false, reason: state.failure };
+    }
+
+    outputChars += (output[output.length - 1]?.length ?? 0) + 1;
+
+    if (outputChars > maxOutputChars) {
+      return { ok: false, reason: "O manifesto reescrito é grande demais." };
     }
   }
 

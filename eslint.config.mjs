@@ -23,6 +23,9 @@ const eslintConfig = defineConfig([
     "src/generated/**",
     // Casca Android (Capacitor): projeto separado, com projeto Android gerado e dependências próprias.
     "mobile/**",
+    // Testes E2E no Chrome (.mjs rodados pelo workflow playback-live.yml): usam
+    // playwright-core, instalado só naquele job, e funções que rodam no navegador.
+    "e2e/**",
   ]),
 ]);
 

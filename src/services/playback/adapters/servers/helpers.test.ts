@@ -151,6 +151,14 @@ describe("match-utils", () => {
     assert.deepEqual(splitTitleYear("2001: Uma Odisseia"), { title: "2001: Uma Odisseia" });
   });
 
+  it("bounds hostile provider titles before the backtracking regexes", () => {
+    const started = Date.now();
+    const result = splitTitleYear("(".repeat(200_000));
+
+    assert.ok(result.title.length <= 300);
+    assert.ok(Date.now() - started < 2_000);
+  });
+
   it("matches titles and years leniently but not blindly", () => {
     assert.equal(titlesMatch(["Matrix", undefined], "MATRIX"), true);
     assert.equal(titlesMatch([undefined, "The Matrix"], "the matrix"), true);

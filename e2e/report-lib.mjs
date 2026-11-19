@@ -106,21 +106,39 @@ export function renderMarkdown(title, rows) {
   }
 
   const videos = rows.filter((row) => row.video);
+  // Only a Chrome playback proof (L4) counts as "played"; the rest was just checked.
+  const played = videos.filter((row) => row.levels.L4 === "pass");
+  const checkedOnly = videos.filter((row) => row.levels.L4 !== "pass");
+  const seconds = (value) => (typeof value === "number" ? `${value.toFixed(1)} s` : "—");
 
-  if (videos.length > 0) {
+  if (played.length > 0) {
     lines.push(
       "",
-      "### Vídeos efetivamente reproduzidos / verificados",
+      "### Vídeos efetivamente reproduzidos no Chrome (L4 ✅)",
       "",
       "| Título | Fonte | Duração | Tempo reproduzido no Chrome |",
       "| --- | --- | --- | --- |",
     );
 
-    for (const { video } of videos) {
-      const seconds = (value) => (typeof value === "number" ? `${value.toFixed(1)} s` : "—");
-
+    for (const { video } of played) {
       lines.push(
         `| ${escapeCell(video.title)} | ${escapeCell(video.source)} | ${seconds(video.durationSeconds)} | ${seconds(video.playedSeconds)} |`,
+      );
+    }
+  }
+
+  if (checkedOnly.length > 0) {
+    lines.push(
+      "",
+      "### Vídeos verificados, sem reprodução comprovada no Chrome",
+      "",
+      "| Título | Fonte | Duração |",
+      "| --- | --- | --- |",
+    );
+
+    for (const { video } of checkedOnly) {
+      lines.push(
+        `| ${escapeCell(video.title)} | ${escapeCell(video.source)} | ${seconds(video.durationSeconds)} |`,
       );
     }
   }

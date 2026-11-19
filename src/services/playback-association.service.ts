@@ -7,6 +7,7 @@ import {
   updateAssociationRights,
 } from "@/repositories/playback-association.repository";
 import { adapters } from "@/services/playback/adapters/registry";
+import { invalidatingPlayable } from "@/services/playback/playable-titles.default";
 import {
   createAssociationService,
   type AssociationRepository,
@@ -36,12 +37,13 @@ const repository: AssociationRepository = {
 
 const service = createAssociationService({ repository, adapters });
 
-export const {
-  listAssociations,
-  createAssociation,
-  setAssociationRights,
-  verifyAssociation,
-  removeAssociation,
-  seedOpenFilmAssociations,
-  listAdapters,
-} = service;
+export const { listAssociations, listAdapters } = service;
+
+// Every write refreshes the "has video" card badges right away.
+export const createAssociation = invalidatingPlayable(service.createAssociation);
+export const setAssociationRights = invalidatingPlayable(service.setAssociationRights);
+export const verifyAssociation = invalidatingPlayable(service.verifyAssociation);
+export const removeAssociation = invalidatingPlayable(service.removeAssociation);
+export const seedOpenFilmAssociations = invalidatingPlayable(
+  service.seedOpenFilmAssociations,
+);

@@ -6,6 +6,8 @@ import { findCuratedArchiveMovie } from "./providers/internet-archive.provider";
  * without asking any external API: the authorized source (when configured)
  * answers for every TMDB id, and the Internet Archive list is static.
  * YouTube is deliberately left out — knowing would cost API quota per card.
+ * NOTE: this is NOT proof of availability; cards use the CONFIRMED lookup
+ * (playable-titles) instead, so do not derive "has video" from this.
  */
 export function hasKnownPlaybackSource(
   tmdbId: number | null,

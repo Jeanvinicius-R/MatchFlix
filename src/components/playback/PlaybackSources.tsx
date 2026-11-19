@@ -20,7 +20,28 @@ interface PlaybackSourcesProps {
 type LoadState =
   | { status: "loading" }
   | { status: "error" }
-  | { status: "ready"; sources: PlaybackSource[] };
+  | { status: "ready"; sources: PlaybackSource[]; availability: string | null };
+
+/** The live check may hit the provider; do not hold the player for long. */
+const AVAILABILITY_CHECK_TIMEOUT_MS = 12_000;
+
+/**
+ * `/api/playback/movie/<id>` or `/api/playback/tv/<id>/<season>/<episode>` as the
+ * matching `/api/playback/availability?...&check=1` URL (null for anything else).
+ */
+function availabilityCheckUrl(endpoint: string): string | null {
+  const movie = /^\/api\/playback\/movie\/(\d+)$/.exec(endpoint);
+
+  if (movie) {
+    return `/api/playback/availability?tmdbId=${movie[1]}&type=movie&check=1`;
+  }
+
+  const episode = /^\/api\/playback\/tv\/(\d+)\/(\d+)\/(\d+)$/.exec(endpoint);
+
+  return episode
+    ? `/api/playback/availability?tmdbId=${episode[1]}&type=episode&season=${episode[2]}&episode=${episode[3]}&check=1`
+    : null;
+}
 
 function Placeholder({ children, busy = false }: { children: React.ReactNode; busy?: boolean }) {
   return (
@@ -82,25 +103,51 @@ export default function PlaybackSources({
   useEffect(() => {
     let cancelled = false;
 
-    fetch(endpoint)
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
+    async function load() {
+      // Before anybody presses play: a live re-check of the title's associations
+      // (also lets an UNAVAILABLE one recover). Best effort and silent; playback
+      // below still resolves live, so a failure here changes nothing.
+      let availability: string | null = null;
+      const checkUrl = availabilityCheckUrl(endpoint);
+
+      if (checkUrl) {
+        try {
+          const checked = await fetch(checkUrl, {
+            signal: AbortSignal.timeout(AVAILABILITY_CHECK_TIMEOUT_MS),
+          });
+
+          if (checked.ok) {
+            const body = (await checked.json()) as { state?: string };
+            availability = typeof body.state === "string" ? body.state : null;
+          }
+        } catch {
+          availability = null;
         }
-        const data = (await response.json()) as { sources?: PlaybackSource[] };
-        if (!cancelled) {
-          const sources = data.sources ?? [];
-          setState({ status: "ready", sources });
-          setSelectedId(sources[0]?.id ?? null);
-          setFailedIds([]);
-        }
-      })
-      .catch((error) => {
-        console.error("Erro ao carregar fontes de reprodução:", error);
-        if (!cancelled) {
-          setState({ status: "error" });
-        }
-      });
+      }
+
+      if (cancelled) {
+        return;
+      }
+
+      const response = await fetch(endpoint);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const data = (await response.json()) as { sources?: PlaybackSource[] };
+      if (!cancelled) {
+        const sources = data.sources ?? [];
+        setState({ status: "ready", sources, availability });
+        setSelectedId(sources[0]?.id ?? null);
+        setFailedIds([]);
+      }
+    }
+
+    load().catch((error) => {
+      console.error("Erro ao carregar fontes de reprodução:", error);
+      if (!cancelled) {
+        setState({ status: "error" });
+      }
+    });
 
     return () => {
       cancelled = true;
@@ -162,7 +209,11 @@ export default function PlaybackSources({
   if (sources.length === 0) {
     return (
       <Unavailable>
-        <p>Nenhuma fonte de reprodução autorizada está disponível para este título.</p>
+        <p>
+          {state.availability === "UNAVAILABLE"
+            ? "O provedor autorizado não está entregando este vídeo agora. Tente mais tarde."
+            : "Nenhuma fonte de reprodução autorizada está disponível para este título."}
+        </p>
       </Unavailable>
     );
   }

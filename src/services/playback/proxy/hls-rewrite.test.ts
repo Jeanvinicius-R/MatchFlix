@@ -240,3 +240,59 @@ describe("hls detection helpers", () => {
     assert.equal(hasHlsExtension(new URL("https://h.example.org/a/b.mp4?f=x.m3u8")), false);
   });
 });
+
+describe("rewriteHlsManifest: URLs the player would fetch by itself", () => {
+  const HEAD = "#EXTM3U\n#EXT-X-VERSION:7\n";
+
+  it("refuses interstitial and steering attributes (they would bypass the proxy)", () => {
+    const evil = [
+      '#EXT-X-DATERANGE:ID="ad",START-DATE="2026-01-01T00:00:00Z",X-ASSET-URI="https://evil.example.net/ad.m3u8"',
+      '#EXT-X-DATERANGE:ID="ad",START-DATE="2026-01-01T00:00:00Z",X-ASSET-LIST="https://evil.example.net/list.json"',
+      '#EXT-X-CONTENT-STEERING:SERVER-URI="https://evil.example.net/steer",PATHWAY-ID="a"',
+      '#EXT-X-FUTURE:SERVER-URI="https://evil.example.net/x"',
+    ];
+
+    for (const line of evil) {
+      const { result, seen } = rewrite(`${HEAD}${line}\n#EXTINF:4,\nseg1.ts\n`);
+
+      assert.equal(result.ok, false, line);
+      assert.deepEqual(seen, [], line);
+      assert.ok(!JSON.stringify(result).includes("evil.example.net"), line);
+    }
+  });
+
+  it("still rewrites a lower-case uri attribute instead of passing it through", () => {
+    const { result, seen } = rewrite(`${HEAD}#EXT-X-MAP:uri="init.mp4"\n#EXTINF:4,\nseg1.ts\n`);
+
+    assert.equal(result.ok, true);
+    assert.equal(seen[0], "https://media.example.org/vod/42/init.mp4");
+  });
+});
+
+describe("rewriteHlsManifest: resource limits", () => {
+  it("refuses a manifest with more URIs than the cap", () => {
+    const lines = ["#EXTM3U", ...Array.from({ length: 6 }, (_, index) => `s${index}.ts`)];
+    const fake = rewriter();
+    const result = rewriteHlsManifest(lines.join("\n"), {
+      baseUrl: BASE,
+      allowedOrigins: ORIGINS,
+      rewriteUrl: fake.rewriteUrl,
+      maxUris: 5,
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(fake.seen.length, 5);
+  });
+
+  it("refuses a rewritten manifest that grows past the output cap", () => {
+    const lines = ["#EXTM3U", ...Array.from({ length: 50 }, (_, index) => `s${index}.ts`)];
+    const result = rewriteHlsManifest(lines.join("\n"), {
+      baseUrl: BASE,
+      allowedOrigins: ORIGINS,
+      rewriteUrl: (url) => `P(${url})`,
+      maxOutputChars: 500,
+    });
+
+    assert.equal(result.ok, false);
+  });
+});

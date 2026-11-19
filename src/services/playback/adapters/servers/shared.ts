@@ -226,6 +226,7 @@ export function createServerHttp(options: ServerHttpOptions): ServerHttp {
     method: "HEAD" | "GET",
     url: string,
     probe: ProbeOptions,
+    headers: Record<string, string> | undefined,
   ): Promise<Response | AdapterFailure> {
     try {
       return await guarded(url, {
@@ -234,7 +235,7 @@ export function createServerHttp(options: ServerHttpOptions): ServerHttp {
         redirect: "manual",
         headers: {
           ...(method === "GET" ? { Range: "bytes=0-0" } : {}),
-          ...probe.headers,
+          ...headers,
         },
       });
     } catch {
@@ -268,14 +269,18 @@ export function createServerHttp(options: ServerHttpOptions): ServerHttp {
     async probe(url: string, probe: ProbeOptions) {
       refused.delete(probe.signal);
       let current = url;
+      const firstOrigin = originOf(url);
 
       for (let redirects = 0; ; redirects += 1) {
-        let response = await attempt("HEAD", current, probe);
+        // Credentials never follow a redirect to another origin (the proxy drops
+        // them the same way).
+        const headers = originOf(current) === firstOrigin ? probe.headers : undefined;
+        let response = await attempt("HEAD", current, probe, headers);
 
         // Servers often mishandle HEAD: a 1-byte ranged GET settles it.
         if (!isFailure(response) && (response.status < 200 || response.status >= 400)) {
           await discard(response);
-          response = await attempt("GET", current, probe);
+          response = await attempt("GET", current, probe, headers);
         }
 
         if (isFailure(response)) {

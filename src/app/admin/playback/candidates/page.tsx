@@ -3,7 +3,6 @@ import Link from "next/link";
 import {
   CandidateFilters,
   type CandidateFilterValues,
-  type CandidateMethodFilter,
 } from "@/features/admin/components/CandidateFilters";
 import { CandidateReviewTable } from "@/features/admin/components/CandidateReviewTable";
 import type { CandidateAdapterOption } from "@/features/admin/components/CandidateShared";
@@ -58,13 +57,14 @@ export default async function AdminCandidatesPage({ searchParams }: CandidatesPa
     suggestedLicenseReference: adapter.suggestedLicenseReference,
   }));
 
-  const loaded = await listCandidates({
+  // The method filter is applied by the query, BEFORE the limit.
+  const candidates = await listCandidates({
     status: "PENDING",
     provider: filters.provider || undefined,
     minScore: filters.minScore ? Number(filters.minScore) : undefined,
+    matchKind: filters.method || undefined,
     limit: CANDIDATE_LIMIT,
   });
-  const candidates = filterByMethod(loaded, filters.method);
 
   return (
     <div className="flex flex-col gap-6">
@@ -117,7 +117,7 @@ export default async function AdminCandidatesPage({ searchParams }: CandidatesPa
         />
         <p className="text-muted-foreground text-xs">
           {candidates.length} sugestão(ões) exibida(s), da maior para a menor nota.
-          {loaded.length >= CANDIDATE_LIMIT &&
+          {candidates.length >= CANDIDATE_LIMIT &&
             ` Mostrando só as ${CANDIDATE_LIMIT} primeiras; aprove ou rejeite para ver as seguintes.`}
         </p>
         <CandidateReviewTable
@@ -128,17 +128,4 @@ export default async function AdminCandidatesPage({ searchParams }: CandidatesPa
       </section>
     </div>
   );
-}
-
-function filterByMethod<T extends { matchMethod: string }>(
-  candidates: T[],
-  method: CandidateMethodFilter,
-): T[] {
-  if (method === "strong") {
-    return candidates.filter((candidate) => candidate.matchMethod !== "METADATA");
-  }
-  if (method === "metadata") {
-    return candidates.filter((candidate) => candidate.matchMethod === "METADATA");
-  }
-  return candidates;
 }

@@ -157,6 +157,24 @@ describe("rest adapter: resolve", () => {
     assert.deepEqual(asset.proxy?.allowedOrigins, [API]);
   });
 
+  it("never sends the API credentials to another media origin the JSON names", async () => {
+    const fake = fakeFetch(() => json(playback("https://cdn.example.com/v.mp4")));
+    const adapter = createRestAdapter({
+      config: {
+        ...config,
+        mediaNeedsAuth: true,
+        mediaOrigins: ["https://cdn.example.com"],
+      },
+      fetchImpl: fake.impl,
+      probe: false,
+    });
+    const asset = expectAsset(await adapter.resolve("abc", signal()));
+
+    assert.equal(asset.proxy?.upstreamUrl, "https://cdn.example.com/v.mp4");
+    assert.equal(asset.proxy?.headers, undefined);
+    assert.equal(JSON.stringify(asset).includes("tok-secret"), false);
+  });
+
   it("proxies a query-authenticated mp4 but not HLS", async () => {
     const queryConfig: RestServerConfig = {
       ...config,

@@ -43,7 +43,12 @@ export function CandidateReviewTable({
   const [isRejecting, startReject] = useTransition();
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set<string>());
   // null = the admin has not typed yet, so the provider's suggestion applies.
-  const [licenseDraft, setLicenseDraft] = useState<string | null>(null);
+  // The text belongs to the provider set it was typed for: another provider's
+  // selection never inherits it (a licence must not leak to unrelated titles).
+  const [licenseDraft, setLicenseDraft] = useState<{
+    providers: string;
+    text: string;
+  } | null>(null);
   // The selection the admin confirmed the licence for. Any change to the selection
   // invalidates it, so the box is never silently carried over to other titles.
   const [coverageKey, setCoverageKey] = useState<string | null>(null);
@@ -62,8 +67,10 @@ export function CandidateReviewTable({
     providerIds.size === 1
       ? adapterById.get([...providerIds][0])?.suggestedLicenseReference
       : undefined;
-  const licenseReference = licenseDraft ?? suggestedLicense ?? "";
-  const isPrefilled = licenseDraft === null && suggestedLicense !== undefined;
+  const providersKey = [...providerIds].sort().join(",");
+  const typedLicense = licenseDraft?.providers === providersKey ? licenseDraft.text : null;
+  const licenseReference = typedLicense ?? suggestedLicense ?? "";
+  const isPrefilled = typedLicense === null && suggestedLicense !== undefined;
   const licenseError = result?.fieldErrors?.licenseReference?.[0];
 
   const allSelected = candidates.length > 0 && selectedCandidates.length === candidates.length;
@@ -199,7 +206,9 @@ export function CandidateReviewTable({
           maxLength={500}
           autoComplete="off"
           placeholder="Licença, contrato ou URL oficial que comprova a autorização"
-          onChange={(event) => setLicenseDraft(event.target.value)}
+          onChange={(event) =>
+            setLicenseDraft({ providers: providersKey, text: event.target.value })
+          }
           error={licenseError}
           {...(licenseError ? {} : { "aria-describedby": licenseHelpId })}
         />

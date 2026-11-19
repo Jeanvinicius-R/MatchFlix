@@ -26,6 +26,18 @@ if (!databaseUrl) {
   throw new Error("DATABASE_URL não está definida.");
 }
 
+// This script plants a known admin password and VERIFIED rights: refuse anything
+// that is not an explicit opt-in on a local/ephemeral database.
+if (process.env.E2E_ALLOW_SEED !== "1") {
+  throw new Error("e2e-seed exige E2E_ALLOW_SEED=1 (definido só no workflow de e2e).");
+}
+
+const LOCAL_DATABASE_HOSTS = ["localhost", "127.0.0.1", "[::1]", "::1", "postgres"];
+
+if (!LOCAL_DATABASE_HOSTS.includes(new URL(databaseUrl).hostname)) {
+  throw new Error("e2e-seed só roda em banco local/efêmero.");
+}
+
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: databaseUrl }),
 });

@@ -24,6 +24,7 @@ import {
   isOnAllowedOrigin,
   mediaFromExtension,
   extensionOfUrl,
+  originOf,
   sameHost,
   toProxiedMedia,
   type BrowserMedia,
@@ -169,7 +170,12 @@ export function createRestAdapter(options: RestAdapterOptions): PlaybackAdapter 
     if (config.mediaNeedsAuth || config.allowPrivateNetwork) {
       const proxy = toProxiedMedia({
         url: mediaUrl,
-        auth: config.mediaNeedsAuth ? config.auth : { type: "none" },
+        // The JSON is untrusted: credentials go only to the server's own origin,
+        // never to another mediaOrigin it happened to name (same rule as M3U).
+        auth:
+          config.mediaNeedsAuth && originOf(mediaUrl) === originOf(config.baseUrl)
+            ? config.auth
+            : { type: "none" },
         media,
         allowedOrigins,
         allowPrivateNetwork: config.allowPrivateNetwork,

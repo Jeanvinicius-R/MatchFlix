@@ -15,12 +15,16 @@ export function normalizeTitle(raw: string): string {
     .trim();
 }
 
+/** Longest provider title looked at (anything beyond is noise or hostile). */
+const MAX_TITLE_CHARS = 300;
+
 /**
  * Splits a provider title such as "[PT-BR] Matrix (1999) [4K]" into the bare
  * title and the year. Leading tags and trailing (...)/[...] groups are dropped.
  */
 export function splitTitleYear(raw: string): { title: string; year?: number } {
-  const text = raw.trim().replace(/^(\[[^\]]{0,24}\]\s*)+/, "");
+  // Bounded first: provider names are untrusted and the regexes below backtrack.
+  const text = raw.slice(0, MAX_TITLE_CHARS).trim().replace(/^(\[[^\]]{0,24}\]\s*)+/, "");
   const yearMatch = /[(\[]\s*((?:19|20)\d{2})\s*[)\]]/.exec(text);
 
   if (yearMatch && yearMatch.index > 0) {

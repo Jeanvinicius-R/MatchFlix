@@ -10,3 +10,19 @@ export const playableTitles = createPlayableTitles({
 export function getPlayableLookup() {
   return playableTitles.get();
 }
+
+/**
+ * Wraps a write (approval, revocation, removal, re-check) so the card badges
+ * are recomputed right after it instead of lagging behind for the cache TTL.
+ */
+export function invalidatingPlayable<A extends unknown[], R>(
+  action: (...args: A) => Promise<R>,
+): (...args: A) => Promise<R> {
+  return async (...args: A): Promise<R> => {
+    try {
+      return await action(...args);
+    } finally {
+      playableTitles.invalidate();
+    }
+  };
+}

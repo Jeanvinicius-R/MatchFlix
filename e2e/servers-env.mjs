@@ -49,7 +49,7 @@ const servers = [
 const json = JSON.stringify(servers);
 
 function quote(value) {
-  return `'${String(value).replace(/'/g, "'\''")}'`;
+  return `'${String(value).replace(/'/g, "'\\''")}'`;
 }
 
 if (process.argv.includes("--shell")) {

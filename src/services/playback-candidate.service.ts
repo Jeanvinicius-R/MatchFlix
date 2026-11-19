@@ -1,16 +1,19 @@
 import {
   createAssociationRecord,
   findAssociationIdsForReverification,
+  findAssociationRights,
 } from "@/repositories/playback-association.repository";
 import {
   findCandidates,
   findCandidatesByIds,
   findCatalogTitlesToScan,
+  findKnownAssetIds,
   markCandidatesDecided,
   saveCandidateSuggestion,
 } from "@/repositories/playback-candidate.repository";
 import { verifyAssociation } from "@/services/playback-association.service";
 import { adapters } from "@/services/playback/adapters/registry";
+import { invalidatingPlayable } from "@/services/playback/playable-titles.default";
 import {
   createCandidateService,
   type CandidateRepository,
@@ -43,6 +46,7 @@ const repository: CandidateRepository = {
   findByIds: findCandidatesByIds,
   markDecided: markCandidatesDecided,
   findTitlesToScan: findCatalogTitlesToScan,
+  knownAssetIds: findKnownAssetIds,
 };
 
 const tmdb: TmdbPort = {
@@ -57,6 +61,7 @@ const service = createCandidateService({
   repository,
   associations: {
     create: createAssociationRecord,
+    findRights: findAssociationRights,
     verify: verifyAssociation,
     idsForReverification: findAssociationIdsForReverification,
   },
@@ -64,10 +69,9 @@ const service = createCandidateService({
   tmdb,
 });
 
-export const {
-  listCandidates,
-  approveCandidates,
-  rejectCandidates,
-  syncProvider,
-  reverifyAssociations,
-} = service;
+export const { listCandidates, rejectCandidates, syncProvider } = service;
+
+// An approval creates associations and a re-check changes availability: the card
+// badges must reflect both right away.
+export const approveCandidates = invalidatingPlayable(service.approveCandidates);
+export const reverifyAssociations = invalidatingPlayable(service.reverifyAssociations);

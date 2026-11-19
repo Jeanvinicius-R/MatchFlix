@@ -1,0 +1,294 @@
+name: Playback live
+
+# Prova REAL do fluxo TMDB -> associação -> provedor -> URL -> player -> vídeo
+# tocando. Separado do ci.yml de propósito: depende da rede (archive.org,
+# PeerTube) e do Google Chrome, então não bloqueia o CI principal, mas fica
+# vermelho quando algo quebra.
+#
+# Três jobs:
+#   live-providers  adapters REAIS (Internet Archive x4 + PeerTube): L1, L2, L3 e L5 a/b
+#   e2e-chrome      Next + Postgres + mocks Xtream/M3U + Google Chrome: L1 a L4 e L5 c
+#   final-report    junta os dois em uma tabela cenário x nível
+#
+# Níveis (nunca misturados):
+#   L1 API respondendo                  adapter/API devolve JSON válido e o gate de licença passa
+#   L2 Fonte acessível                  Range 206/200 + content-type de vídeo + caixa ftyp,
+#                                       ou manifesto m3u8 + 1º segmento baixam
+#   L3 Trecho decodificável             ffmpeg decodifica 10 s (NÃO prova o filme inteiro)
+#   L4 Reprodução funcional no Chrome   readyState>=3, videoWidth>0, currentTime avançando >=3 s
+#   L5 Reprodução integral comprovada   (a) ffprobe >= duração mínima, (b) decodificação completa
+#                                       sem erros, (c) Chrome até o evento ended + progresso concluído
+#
+# Segredo opcional: TMDB_ACCESS_TOKEN (sem ele o cenário do TMDB real é "pulado").
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * 1"
+  push:
+    branches: ["feat/**"]
+    paths:
+      - "src/services/playback/**"
+      - "src/components/playback/**"
+      - "src/app/api/playback/**"
+      - "e2e/**"
+      - "scripts/live-playback-check.ts"
+      - "scripts/e2e-seed.ts"
+      - "scripts/e2e-adapter-checks.ts"
+      - "scripts/lib/**"
+      - ".github/workflows/playback-live.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: playback-live-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live-providers:
+    name: live-providers
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    continue-on-error: false
+    env:
+      # Só precisa existir para o "prisma generate" do npm ci; nada conecta ao banco.
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+
+      - name: Garantir ffmpeg e ffprobe
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          fi
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+
+      - name: Disponibilidade e prova de reprodução nos provedores reais
+        run: npx tsx scripts/live-playback-check.ts
+
+      - name: Relatório do job
+        if: always()
+        run: |
+          if [ -f /tmp/live-report.md ]; then
+            echo "Relatório gravado em /tmp/live-report.md"
+          else
+            echo "O script não chegou a gravar o relatório."
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-report
+          path: |
+            /tmp/live-report.md
+            /tmp/live-report.json
+          if-no-files-found: warn
+
+  e2e-chrome:
+    name: e2e-chrome
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    continue-on-error: false
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: matchflix
+          POSTGRES_PASSWORD: matchflix
+          POSTGRES_DB: matchflix_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U matchflix -d matchflix_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://matchflix:matchflix@localhost:5432/matchflix_e2e
+      # Valores de teste: este banco e este servidor só existem durante o job.
+      AUTH_SECRET: e2e-auth-secret-only-for-ci-0123456789abcdef0123456789
+      AUTH_TRUST_HOST: "true"
+      CRON_SECRET: e2e-cron-secret-only-for-ci-0123456789abcdef
+      # Autoriza o scripts/e2e-seed.ts (que ainda recusa bancos que não sejam locais).
+      E2E_ALLOW_SEED: "1"
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+
+      - name: Instalar playwright-core (sem alterar o package.json)
+        run: npm install --no-save --ignore-scripts playwright-core@1.52.0
+
+      - name: Garantir ffmpeg e ffprobe
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          fi
+          ffmpeg -version | head -n 1
+
+      - name: Garantir o Google Chrome (o Chromium do Playwright não decodifica H.264)
+        run: |
+          if ! command -v google-chrome >/dev/null 2>&1; then
+            npx playwright-core install --with-deps chrome
+          fi
+          google-chrome --version
+
+      - name: Aplicar as migrations no Postgres do job
+        run: |
+          npx prisma migrate deploy || npx prisma migrate deploy --config prisma7.config.ts
+
+      - name: Cache do vídeo de teste (Big Buck Bunny, CC BY)
+        id: media-cache
+        uses: actions/cache@v4
+        with:
+          path: e2e-out/bbb.mp4
+          key: e2e-bbb-mp4-v1
+
+      - name: Baixar o Big Buck Bunny do Internet Archive
+        if: steps.media-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p e2e-out
+          curl --fail --location --retry 5 --retry-delay 10 --retry-all-errors --max-time 900 \
+            -A "MatchFlix-E2E/1.0 (+https://github.com/Jeanvinicius-R/MatchFlix)" \
+            -o e2e-out/bbb.mp4 \
+            "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4"
+
+      - name: Validar o MP4 e gerar o HLS a partir dele
+        run: |
+          set -euo pipefail
+          mkdir -p e2e-out/hls
+          ls -l e2e-out/bbb.mp4
+          ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 e2e-out/bbb.mp4
+          # Vídeo copiado, áudio em AAC estéreo (o Chrome não decodifica AC-3 no HLS).
+          ffmpeg -v error -y -i e2e-out/bbb.mp4 \
+            -map 0:v:0 -map "0:a:0?" -c:v copy -c:a aac -b:a 128k -ac 2 \
+            -f hls -hls_time 6 -hls_playlist_type vod -hls_list_size 0 \
+            -hls_segment_filename "e2e-out/hls/seg%04d.ts" \
+            e2e-out/hls/index.m3u8
+          printf '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-STREAM-INF:BANDWIDTH=1500000\nindex.m3u8\n' > e2e-out/hls/master.m3u8
+          ls e2e-out/hls | head -n 5
+
+      - name: Build do Next.js (standalone, como o Dockerfile.render)
+        run: |
+          npm run build
+          cp -r .next/static .next/standalone/.next/static
+
+      - name: Seed do banco (admin, filmes, associações, PeerTube em runtime)
+        run: npx tsx scripts/e2e-seed.ts
+
+      - name: Iniciar o servidor mock de provedores (Xtream e M3U)
+        run: |
+          nohup node e2e/mock-provider-server.mjs > e2e-out/mock-server.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -fsS -o /dev/null http://127.0.0.1:8099/__health; then
+              echo "Mock pronto"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::o servidor mock não subiu"
+          cat e2e-out/mock-server.log
+          exit 1
+
+      - name: Checagens dos adaptadores (SSRF e allowPrivateNetwork)
+        run: |
+          eval "$(node e2e/servers-env.mjs --shell)"
+          npx tsx scripts/e2e-adapter-checks.ts || echo "::warning::as checagens dos adaptadores falharam; o cenário de SSRF do e2e vai falhar"
+
+      - name: Iniciar o MatchFlix (standalone)
+        env:
+          TMDB_ACCESS_TOKEN: ${{ secrets.TMDB_ACCESS_TOKEN }}
+          PORT: "3000"
+          HOSTNAME: "127.0.0.1"
+          NODE_ENV: production
+        run: |
+          eval "$(node e2e/servers-env.mjs --shell)"
+          export PEERTUBE_ALLOWED_INSTANCES="$(cat e2e-out/peertube-hosts.txt)"
+          cd .next/standalone
+          nohup node server.js > "$GITHUB_WORKSPACE/e2e-out/next-server.log" 2>&1 &
+          cd "$GITHUB_WORKSPACE"
+          for i in $(seq 1 60); do
+            if curl -fsS -o /dev/null http://127.0.0.1:3000/login; then
+              echo "MatchFlix pronto"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::o servidor Next não subiu"
+          tail -n 80 e2e-out/next-server.log
+          exit 1
+
+      - name: Testes E2E no Google Chrome
+        env:
+          TMDB_ACCESS_TOKEN: ${{ secrets.TMDB_ACCESS_TOKEN }}
+        run: node e2e/playback.e2e.mjs
+
+      - name: Log do servidor Next (em caso de falha)
+        if: failure()
+        run: |
+          echo "--- next-server.log (final) ---"
+          tail -n 120 e2e-out/next-server.log || true
+          echo "--- mock-server.log (final) ---"
+          tail -n 40 e2e-out/mock-server.log || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-chrome-artifacts
+          path: |
+            e2e-out/screenshots
+            e2e-out/trace.zip
+            e2e-out/e2e-report.json
+            e2e-out/e2e-report.md
+            e2e-out/adapter-checks.json
+            e2e-out/console.log
+            e2e-out/next-server.log
+            e2e-out/mock-server.log
+          if-no-files-found: warn
+
+  final-report:
+    name: final-report
+    needs: [live-providers, e2e-chrome]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: live-report
+          path: reports/live
+
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: e2e-chrome-artifacts
+          path: reports/e2e
+
+      - name: Tabela final cenário x nível (L1 a L5)
+        run: |
+          LIVE="$(find reports/live -name live-report.json 2>/dev/null | head -n 1)"
+          E2E="$(find reports/e2e -name e2e-report.json 2>/dev/null | head -n 1)"
+          node e2e/build-report.mjs "$LIVE" "$E2E" final-report.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: final-report
+          path: final-report.md

@@ -81,6 +81,25 @@ export function findAssociationById(id: string) {
   });
 }
 
+/** Rights of the association stored for this (title, provider, asset) triple, if any. */
+export async function findAssociationRights(
+  key: Omit<NewAssociationRecord, "playbackType" | "rightsStatus" | "licenseReference">,
+): Promise<RightsStatusValue | null> {
+  const row = await prisma.playbackAssociation.findFirst({
+    where: {
+      tmdbId: key.tmdbId,
+      mediaType: key.mediaType,
+      seasonNumber: key.seasonNumber,
+      episodeNumber: key.episodeNumber,
+      provider: key.provider,
+      providerAssetId: key.providerAssetId,
+    },
+    select: { rightsStatus: true },
+  });
+
+  return row?.rightsStatus ?? null;
+}
+
 /** Null when the (title, provider, asset) triple is already registered (P2002). */
 export async function createAssociationRecord(data: NewAssociationRecord) {
   try {

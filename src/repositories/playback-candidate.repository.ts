@@ -45,6 +45,8 @@ export interface CandidateListFilter {
   status?: CandidateStatusValue;
   provider?: string;
   minScore?: number;
+  /** "strong" = identifier match, "metadata" = title/year only (applied before the limit). */
+  matchKind?: "strong" | "metadata";
   limit?: number;
 }
 
@@ -123,6 +125,12 @@ export function findCandidates(filter: CandidateListFilter = {}) {
       status: filter.status,
       provider: filter.provider,
       score: filter.minScore === undefined ? undefined : { gte: filter.minScore },
+      matchMethod:
+        filter.matchKind === "metadata"
+          ? "METADATA"
+          : filter.matchKind === "strong"
+            ? { not: "METADATA" }
+            : undefined,
     },
     orderBy: [{ score: "desc" }, { createdAt: "desc" }],
     take: Math.min(Math.max(filter.limit ?? DEFAULT_LIST_LIMIT, 1), MAX_LIST_LIMIT),
@@ -306,4 +314,25 @@ export async function findCatalogTitlesToScan(input: {
   }
 
   return [...movies, ...(await findEpisodeTitlesToScan(input.provider, remaining))];
+}
+
+/**
+ * Asset ids of `provider` that already have an association or a candidate (any
+ * status), so a catalog sync never spends TMDB queries on them again.
+ */
+export async function findKnownAssetIds(provider: string): Promise<Set<string>> {
+  const [associations, candidates] = await Promise.all([
+    prisma.playbackAssociation.findMany({
+      where: { provider },
+      select: { providerAssetId: true },
+    }),
+    prisma.playbackCandidate.findMany({
+      where: { provider },
+      select: { providerAssetId: true },
+    }),
+  ]);
+
+  return new Set(
+    [...associations, ...candidates].map((row) => row.providerAssetId),
+  );
 }

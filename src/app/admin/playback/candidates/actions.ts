@@ -192,6 +192,6 @@ export async function reverifyAssociationsAction(): Promise<CandidateActionState
   }
   return {
     ok: result.unavailable === 0,
-    message: `${result.checked} associação(ões) reverificada(s): ${result.available} disponível(is), ${result.unavailable} indisponível(is).`,
+    message: `${result.checked} associação(ões) reverificada(s): ${result.available} disponível(is), ${result.unavailable} indisponível(is).${result.checked >= REVERIFY_BATCH_LIMIT ? " Pode haver mais: rode de novo." : ""}`,
   };
 }

@@ -20,6 +20,7 @@ import {
 import {
   MIN_STORED_SCORE,
   scoreCandidate,
+  stripTrailingNoise,
   type MatchResult,
   type MatchableCandidate,
 } from "./matching/matcher";
@@ -82,6 +83,8 @@ export interface CandidateFilter {
   status?: CandidateStatusValue;
   provider?: string;
   minScore?: number;
+  /** "strong" = identifier match (TMDB/IMDb), "metadata" = title/year only. */
+  matchKind?: "strong" | "metadata";
   limit?: number;
 }
 
@@ -116,6 +119,11 @@ export interface CandidateRepository {
   ): Promise<number>;
   /** Local titles without an association or candidate for `provider`. */
   findTitlesToScan(input: { provider: string; limit: number }): Promise<ScanTitle[]>;
+  /**
+   * Provider asset ids that already have an association or a candidate (any
+   * status), so a catalog sync can skip them without spending TMDB queries.
+   */
+  knownAssetIds(provider: string): Promise<Set<string>>;
 }
 
 /** What the sync needs from TMDB (the default instance wires tmdb.service). */
@@ -138,6 +146,18 @@ export interface TmdbPort {
 export interface AssociationPort {
   /** Null when the (title, provider, asset) triple already exists. */
   create(data: NewAssociation): Promise<AssociationView | null>;
+  /** Rights of the association already stored for this triple (null if none). */
+  findRights(
+    key: Pick<
+      NewAssociation,
+      | "tmdbId"
+      | "mediaType"
+      | "seasonNumber"
+      | "episodeNumber"
+      | "provider"
+      | "providerAssetId"
+    >,
+  ): Promise<NewAssociation["rightsStatus"] | null>;
   verify(id: string): Promise<VerifyResult>;
   /** VERIFIED associations, never-checked and oldest first. */
   idsForReverification(options: {
@@ -243,6 +263,16 @@ function isFailure<T extends object>(result: T | AdapterFailure): result is Adap
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(Math.floor(value), min), max);
+}
+
+/** Rejects once `ms` passed (the task keeps running but its result is dropped). */
+function withDeadline<T>(task: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("timeout")), ms);
+  });
+
+  return Promise.race([task, expired]).finally(() => clearTimeout(timer));
 }
 
 async function inChunks<T>(
@@ -427,7 +457,12 @@ export function createCandidateService(deps: CandidateServiceDeps) {
 
       tmdbQueries += 1;
 
-      const value = await load();
+      // The TMDB client takes no AbortSignal, so the call is raced against the
+      // call timeout / run budget; a timeout throws and nothing is cached.
+      const value = await withDeadline(
+        load(),
+        Math.max(1, Math.min(limits.callTimeoutMs, timeLeft())),
+      );
 
       cache.set(key, value);
       return value;
@@ -492,7 +527,18 @@ export function createCandidateService(deps: CandidateServiceDeps) {
           );
           const match = query ? scoreCandidate(query, item) : null;
 
-          return query && match ? { kind: "match", query, match } : { kind: "none" };
+          // The id is the provider's claim (panels often get it wrong, or give a
+          // series id for a movie): it is not cross-checked, so say so.
+          return query && match
+            ? {
+                kind: "match",
+                query,
+                match: {
+                  ...match,
+                  reason: `${match.reason} Id declarado pelo provedor, NÃO conferido com o título na TMDB: confira antes de aprovar.`,
+                },
+              }
+            : { kind: "none" };
         }
 
         // 2. An IMDb id: TMDB tells which title it belongs to. When TMDB does not
@@ -517,9 +563,11 @@ export function createCandidateService(deps: CandidateServiceDeps) {
         }
 
         // 3. Title + year against TMDB search results (weak evidence).
-        const normalizedKey = `search:${item.mediaType}:${ownTitle.trim().toLowerCase()}`;
+        // Tags like "(2000)" or "[HD]" would only produce false negatives.
+        const searchTitle = stripTrailingNoise(ownTitle) || ownTitle.trim();
+        const normalizedKey = `search:${item.mediaType}:${searchTitle.toLowerCase()}`;
         const hits = await tmdbCached(normalizedKey, () =>
-          isEpisode ? tmdb.searchSeries(ownTitle) : tmdb.searchMovies(ownTitle),
+          isEpisode ? tmdb.searchSeries(searchTitle) : tmdb.searchMovies(searchTitle),
         );
 
         if (hits === null) {
@@ -562,9 +610,16 @@ export function createCandidateService(deps: CandidateServiceDeps) {
 
       let cursor: string | undefined;
       let consecutiveTmdbFailures = 0;
+      // Items that already have an association/candidate cost neither TMDB nor `limit`.
+      const known = await repository.knownAssetIds(source.id);
 
       for (let page = 0; page < limits.maxCatalogPages; page += 1) {
-        if (report.scanned >= limit || timeLeft() <= 0) {
+        if (report.scanned >= limit) {
+          break;
+        }
+
+        if (timeLeft() <= 0) {
+          fail("Tempo da sincronização esgotado: rode de novo para continuar.");
           break;
         }
 
@@ -576,8 +631,18 @@ export function createCandidateService(deps: CandidateServiceDeps) {
         }
 
         for (const item of result.items) {
-          if (report.scanned >= limit || timeLeft() <= 0) {
+          if (report.scanned >= limit) {
             return;
+          }
+
+          if (timeLeft() <= 0) {
+            fail("Tempo da sincronização esgotado: rode de novo para continuar.");
+            return;
+          }
+
+          if (known.has(item.providerAssetId.trim())) {
+            report.skippedExisting += 1;
+            continue;
           }
 
           let outcome: Outcome;
@@ -648,6 +713,12 @@ export function createCandidateService(deps: CandidateServiceDeps) {
               ? tmdb.getMovieExternalIds(title.tmdbId)
               : tmdb.getSeriesExternalIds(title.tmdbId),
           );
+
+          if (external === null) {
+            fail(
+              "Limite de consultas à TMDB atingido: os títulos seguintes foram buscados sem IMDb id.",
+            );
+          }
 
           imdbId = readImdbId(external?.imdbId ?? undefined);
         } catch {
@@ -851,7 +922,22 @@ export function createCandidateService(deps: CandidateServiceDeps) {
           });
 
           if (!created) {
+            // The triple was already registered. Take the candidate out of the
+            // queue either way; a non-VERIFIED association stays as the admin left
+            // it (an approval never overrides a revocation), and we say so.
+            const rights = await associations.findRights(candidate);
+
             result.skipped += 1;
+
+            if (rights !== null && rights !== "VERIFIED") {
+              result.errors.push(
+                `${label}: já existe associação com direitos ${rights}; ajuste-os em Reprodução.`,
+              );
+              await repository.markDecided([candidate.id], "REJECTED", now());
+            } else {
+              await repository.markDecided([candidate.id], "APPROVED", now());
+            }
+
             continue;
           }
 

@@ -103,7 +103,9 @@ function memoryRepository(options: { titles?: ScanTitle[]; associated?: Key[] } 
           (row) =>
             (filter.status === undefined || row.status === filter.status) &&
             (filter.provider === undefined || row.provider === filter.provider) &&
-            (filter.minScore === undefined || row.score >= filter.minScore),
+            (filter.minScore === undefined || row.score >= filter.minScore) &&
+            (filter.matchKind === undefined ||
+              (filter.matchKind === "metadata") === (row.matchMethod === "METADATA")),
         )
         .sort(
           (a, b) => b.score - a.score || b.createdAt.getTime() - a.createdAt.getTime(),
@@ -134,6 +136,25 @@ function memoryRepository(options: { titles?: ScanTitle[]; associated?: Key[] } 
       scanCalls.push(input);
       return (options.titles ?? []).slice(0, input.limit);
     },
+    async knownAssetIds(provider) {
+      const ids = new Set<string>();
+
+      for (const key of associated) {
+        const [, , , , keyProvider, assetId] = key.split("|");
+
+        if (keyProvider === provider) {
+          ids.add(assetId);
+        }
+      }
+
+      for (const row of rows.values()) {
+        if (row.provider === provider) {
+          ids.add(row.providerAssetId);
+        }
+      }
+
+      return ids;
+    },
   };
 
   return { rows, repository, scanCalls, insert };
@@ -145,6 +166,8 @@ function fakeAssociations(
     unavailable?: Set<string>;
     verifyThrows?: boolean;
     reverifyIds?: string[];
+    /** Rights of the pre-existing associations (default VERIFIED). */
+    existingRights?: NewAssociation["rightsStatus"];
   } = {},
 ) {
   const existing = new Set((options.existing ?? []).map(keyOf));
@@ -172,6 +195,9 @@ function fakeAssociations(
       };
 
       return view;
+    },
+    async findRights(key) {
+      return existing.has(keyOf(key)) ? (options.existingRights ?? "VERIFIED") : null;
     },
     async verify(id): Promise<VerifyResult> {
       verified.push(id);
@@ -1008,6 +1034,55 @@ describe("syncProvider (catalog mode)", () => {
     assert.equal(second.skippedExisting, 1);
   });
 
+  it("skips known items without spending TMDB queries or the limit", async () => {
+    const { adapter } = catalogAdapter({
+      start: {
+        items: [
+          movieItem({ providerAssetId: "old", externalIds: { imdb: "tt0000001" } }),
+          movieItem({ providerAssetId: "new", externalIds: { imdb: "tt0000002" } }),
+        ],
+      },
+    });
+    const { service, tmdb, insert } = setup({ adapters: [adapter] });
+
+    insert(candidateData({ provider: "meu-servidor", providerAssetId: "old" }));
+
+    const report = await service.syncProvider({ providerId: "meu-servidor", limit: 1 });
+
+    assert.equal(report.skippedExisting, 1);
+    assert.equal(report.scanned, 1);
+    assert.deepEqual(tmdb.calls, ["find:tt0000002"]);
+  });
+
+  it("gives up on a TMDB call that hangs past the call timeout", async () => {
+    const { adapter } = catalogAdapter({
+      start: { items: [movieItem({ externalIds: { imdb: "tt0000001" } })] },
+    });
+    const { service } = setup({
+      adapters: [adapter],
+      limits: { callTimeoutMs: 20 },
+      tmdb: {
+        findTmdbByImdbId: () =>
+          new Promise<{ movieId?: number; seriesId?: number }>(() => {}),
+      },
+    });
+    const report = await service.syncProvider({ providerId: "meu-servidor" });
+
+    assert.equal(report.created, 0);
+    assert.match(report.failures[0], /Falha ao consultar a TMDB/);
+  });
+
+  it("notes that a declared tmdb id was not cross-checked with TMDB", async () => {
+    const { adapter } = catalogAdapter({
+      start: { items: [movieItem({ externalIds: { tmdb: 10378 } })] },
+    });
+    const { service, rows } = setup({ adapters: [adapter] });
+
+    await service.syncProvider({ providerId: "meu-servidor" });
+
+    assert.match([...rows.values()][0].reason, /NÃO conferido/);
+  });
+
   it("prefers the catalog over discover when an adapter has both", async () => {
     let discovered = 0;
     const adapter = adapterOf("meu-servidor", {
@@ -1199,7 +1274,7 @@ describe("approveCandidates", () => {
     assert.equal(rows.get(weak.id)?.status, "APPROVED");
   });
 
-  it("is idempotent: an existing association is skipped and the candidate stays pending", async () => {
+  it("is idempotent: an existing VERIFIED association is skipped and the candidate leaves the queue", async () => {
     const { service, insert, associations, rows } = setup({
       associations: {
         existing: [
@@ -1222,7 +1297,36 @@ describe("approveCandidates", () => {
 
     assert.deepEqual(result, { approved: 0, skipped: 1, errors: [] });
     assert.equal(associations.verified.length, 0);
-    assert.equal(rows.get(candidate.id)?.status, "PENDING");
+    assert.equal(rows.get(candidate.id)?.status, "APPROVED");
+  });
+
+  it("does not override an existing association that is not VERIFIED, and says so", async () => {
+    const { service, insert, associations, rows } = setup({
+      associations: {
+        existingRights: "REVOKED",
+        existing: [
+          {
+            tmdbId: 10378,
+            mediaType: "MOVIE",
+            seasonNumber: 0,
+            episodeNumber: 0,
+            provider: "archive",
+            providerAssetId: "BigBuckBunny_124",
+          },
+        ],
+      },
+    });
+    const candidate = insert(STRONG);
+    const result = await service.approveCandidates({
+      ids: [candidate.id],
+      licenseReference: LICENSE,
+    });
+
+    assert.equal(result.approved, 0);
+    assert.equal(result.skipped, 1);
+    assert.match(result.errors[0], /direitos REVOKED/);
+    assert.equal(associations.created.length, 0);
+    assert.equal(rows.get(candidate.id)?.status, "REJECTED");
   });
 
   it("skips an already approved candidate and reports a rejected one", async () => {

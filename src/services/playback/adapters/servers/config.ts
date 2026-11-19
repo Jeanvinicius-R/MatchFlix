@@ -19,7 +19,8 @@ import { isValidJsonPath } from "./json-path";
  * private/loopback/link-local addresses unless the operator sets
  * `allowPrivateNetwork: true` on that server. `mediaOrigins` lists the extra
  * origins media may live on (CDNs); playlist/JSON content is never trusted to
- * name an origin by itself.
+ * name an origin by itself. NOTE: `allowPrivateNetwork` is one flag per server
+ * and also covers its `mediaOrigins`, so with it on they must be trusted hosts.
  */
 
 export type ServerKind = "xtream" | "m3u" | "files" | "rest";
@@ -492,7 +493,8 @@ export function parsePlaybackServers(
       if (config.allowPrivateNetwork) {
         warn(
           `PLAYBACK_SERVERS: ${name} tem allowPrivateNetwork ativo; o backend poderá ` +
-            "conectar a endereços de rede privada para este servidor.",
+            "conectar a endereços de rede privada para este servidor e para os seus " +
+            "mediaOrigins (a permissão vale para todo o token; só liste origens de confiança).",
         );
       }
     } catch (error) {

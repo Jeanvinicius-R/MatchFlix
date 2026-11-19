@@ -37,7 +37,7 @@ export function SyncReverifyButton() {
           onClick={handleClick}
           disabled={isPending}
         >
-          {isPending ? "Reverificando..." : "Reverificar todas (lote)"}
+          {isPending ? "Reverificando..." : "Reverificar as 25 mais antigas"}
         </Button>
         <div aria-live="polite" className="text-sm">
           {result?.message && (
