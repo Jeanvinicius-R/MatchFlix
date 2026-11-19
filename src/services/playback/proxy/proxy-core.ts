@@ -1,4 +1,4 @@
-import { ADAPTER_USER_AGENT, defaultFetch } from "../adapters/adapter.types";
+import { ADAPTER_USER_AGENT } from "../adapters/adapter.types";
 import { hasHlsExtension, isHlsContentType, rewriteHlsManifest } from "./hls-rewrite";
 import {
   buildProxyUrl,
@@ -6,6 +6,7 @@ import {
   readProxyToken,
   type ProxyTokenPayload,
 } from "./proxy-token";
+import { createSafeFetch } from "./safe-fetch";
 
 /**
  * Core of GET/HEAD /api/playback/proxy/<token>, free of next/auth/prisma so it
@@ -25,6 +26,13 @@ export interface ProxyRequest {
   ifRangeHeader?: string | null;
   /** The signed-in user; must be the user the token was minted for. */
   viewerId?: string;
+  /**
+   * True while the association that authorized the media is still VERIFIED and
+   * not UNAVAILABLE (a database check, injected by the route). Asked on EVERY
+   * request, segments included, before any byte is fetched from the upstream.
+   */
+  isAssociationPlayable(associationId: string): Promise<boolean>;
+  /** Tests only: replaces the SSRF-safe fetch used for the upstream. */
   fetchImpl?: typeof fetch;
   /** Fires when the client goes away: the upstream request is aborted. */
   signal?: AbortSignal;
@@ -288,6 +296,20 @@ export async function handleProxyRequest(request: ProxyRequest): Promise<ProxyRe
     return fail(403, "Acesso negado.");
   }
 
+  // Authorization can be revoked at any time: ask the database every time and
+  // fail closed (no upstream contact) when the answer is "no" or unknown.
+  let playable: boolean;
+
+  try {
+    playable = await request.isAssociationPlayable(payload.associationId);
+  } catch {
+    return fail(503, "Não foi possível verificar a autorização da fonte.");
+  }
+
+  if (!playable) {
+    return fail(410, "Esta fonte não está mais autorizada para reprodução.");
+  }
+
   if (request.signal?.aborted) {
     return fail(502, GENERIC_UPSTREAM_ERROR);
   }
@@ -318,7 +340,8 @@ export async function handleProxyRequest(request: ProxyRequest): Promise<ProxyRe
 
   try {
     const upstream = await fetchUpstream(
-      request.fetchImpl ?? defaultFetch,
+      request.fetchImpl ??
+        createSafeFetch({ allowPrivateNetwork: payload.allowPrivateNetwork }),
       method,
       start,
       payload.headers,
@@ -451,6 +474,8 @@ async function rewriteManifest(
             headers: sameOrigin ? payload.headers : {},
             allowedOrigins: payload.allowedOrigins,
             userId: payload.userId,
+            associationId: payload.associationId,
+            allowPrivateNetwork: payload.allowPrivateNetwork,
           },
           { now: request.now, secret: request.secret },
         ),

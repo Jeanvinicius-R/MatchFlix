@@ -210,7 +210,7 @@ Ao abrir `/watch/[slug]` ou `/watch/series/[slug]?e=<episódio>`, a página esco
 | `internet-archive` | Sempre — só para títulos da lista curada                | ✔      | —         | Não (o embed não tem API pública)  |
 | `youtube`          | `YOUTUBE_API_KEY` **e** `YOUTUBE_ALLOWED_CHANNEL_IDS`   | ✔      | ✔         | Sim, via YouTube IFrame Player API |
 
-O `authorized` só monta URLs (`${BASE}/movie/<tmdbId>`, `${BASE}/tv/<tmdbId>/<temporada>/<episódio>`); não busca nada. O `PlaybackPlayer` também suporta os tipos `direct`, `hls` (nativo, Safari/iOS) e `external`, mas nenhum provider atual os usa — por isso o hls.js não está instalado.
+O `authorized` só monta URLs (`${BASE}/movie/<tmdbId>`, `${BASE}/tv/<tmdbId>/<temporada>/<episódio>`); não busca nada. O `PlaybackPlayer` suporta os tipos `iframe`, `direct` (MP4/WebM), `hls` (nativo no Safari/iOS; nos demais navegadores via **hls.js**, empacotado), `dash` (via **dash.js**) e `external`. hls.js e dash.js são carregados sob demanda (`import()` dinâmico), só quando uma fonte precisa deles; ambos têm menu de qualidade/áudio/legendas e o mesmo aviso de erro com "Tentar de novo".
 
 ### Internet Archive (curadoria)
 
@@ -358,7 +358,7 @@ Fluxo: componentes → `services/` → `repositories/` → Prisma. Dados externo
 - **Internet Archive** só tem 3 filmes curados e nenhum episódio.
 - **Progresso/histórico** não é salvo para iframes sem API oficial (fonte autorizada, Internet Archive).
 - **Storage** só LOCAL; no Render grátis os uploads não persistem.
-- **HLS** só nativo (Safari/iOS); nenhum provider atual entrega HLS.
+- **DASH** só toca manifestos acessíveis ao navegador; streams com DRM não são suportados.
 - **Rate limit de login em memória**: reinicia com o processo e não é compartilhado entre instâncias (adequado a uma instância, como no Render grátis).
 - **Migrations** rodam sozinhas no Docker Compose (serviço `migrate`), mas não no Render: lá é preciso `npm run db:deploy`.
 - **Papel ADMIN no JWT**: promover/rebaixar um usuário só vale após novo login.
@@ -366,7 +366,6 @@ Fluxo: componentes → `services/` → `repositories/` → Prisma. Dados externo
 ## Roteiro
 
 - Storage S3/R2/MinIO (o enum já existe; falta implementação e um ambiente para testar), para uploads persistentes em produção.
-- hls.js, apenas se surgir uma fonte autorizada que entregue HLS.
 - Fonte legal no YouTube para o catálogo brasileiro (canal com direitos verificados para a região BR).
 - Mais títulos curados no Internet Archive seguindo a regra de domínio público no Brasil.
 - Rate limit compartilhado (ex.: Redis) caso o app passe a rodar em várias instâncias.

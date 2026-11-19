@@ -1,5 +1,6 @@
 import type { AgeRating as PrismaAgeRating } from "@/generated/prisma/enums";
 import { hasKnownPlaybackSource } from "@/services/playback/availability";
+import type { PlayableLookup } from "@/services/playback/playable-titles";
 import type { AgeRating, ContentSummary, Genre } from "@/types/content.types";
 
 /**
@@ -51,27 +52,43 @@ export const AGE_RATING_LABELS: Record<PrismaAgeRating, AgeRating> = {
   EIGHTEEN: "18",
 };
 
-export function mapMovieToContentSummary(movie: MovieRecord): ContentSummary {
+/**
+ * `playable` carries the titles with a CONFIRMED association (VERIFIED, found
+ * AVAILABLE recently). Without it (not loaded, or the database failed) the
+ * card keeps the previous rule: a linked file or a statically known source.
+ */
+export function mapMovieToContentSummary(
+  movie: MovieRecord,
+  playable?: PlayableLookup | null,
+): ContentSummary {
   return {
     id: movie.id,
     slug: movie.slug,
+    tmdbId: movie.tmdbId ?? undefined,
     title: movie.title,
     type: "MOVIE",
     releaseYear: movie.releaseYear,
     ageRating: AGE_RATING_LABELS[movie.ageRating],
     durationInMinutes: movie.durationInMinutes,
     synopsis: movie.synopsis,
-    hasVideo: movie.videoMediaId !== null || hasKnownPlaybackSource(movie.tmdbId, "movie"),
+    hasVideo:
+      movie.videoMediaId !== null ||
+      hasKnownPlaybackSource(movie.tmdbId, "movie") ||
+      playable?.hasMovie(movie.tmdbId) === true,
     genres: movie.genres,
     posterUrl: movie.poster?.url,
     backdropUrl: movie.backdrop?.url,
   };
 }
 
-export function mapSeriesToContentSummary(series: SeriesRecord): ContentSummary {
+export function mapSeriesToContentSummary(
+  series: SeriesRecord,
+  playable?: PlayableLookup | null,
+): ContentSummary {
   return {
     id: series.id,
     slug: series.slug,
+    tmdbId: series.tmdbId ?? undefined,
     title: series.title,
     type: "SERIES",
     releaseYear: series.releaseYear,
@@ -80,7 +97,8 @@ export function mapSeriesToContentSummary(series: SeriesRecord): ContentSummary 
     synopsis: series.synopsis,
     hasVideo:
       series.seasons.some((season) => season.episodes.length > 0) ||
-      hasKnownPlaybackSource(series.tmdbId, "series"),
+      hasKnownPlaybackSource(series.tmdbId, "series") ||
+      playable?.hasSeries(series.tmdbId) === true,
     genres: series.genres,
     posterUrl: series.poster?.url,
     backdropUrl: series.backdrop?.url,

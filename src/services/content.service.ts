@@ -5,8 +5,15 @@ import {
   findContentByGenreSlug,
   findContinueWatching,
   findFeaturedContent,
+  findMoviesPage,
+  findSeriesPage,
   searchContent,
 } from "@/repositories/content.repository";
+import {
+  CATALOG_PAGE_SIZE,
+  buildPageView,
+  type PageView,
+} from "@/services/catalog-api";
 import type { ContentRow, ContentSummary } from "@/types/content.types";
 
 /**
@@ -75,4 +82,22 @@ export async function searchCatalog(
     return [];
   }
   return searchContent(query, kidsOnly);
+}
+
+/** One page of the local movie catalog (the /api/catalog/movies listing). */
+export async function getMovieCatalogPage(
+  page: number,
+  kidsOnly = false,
+): Promise<PageView<ContentSummary>> {
+  const { items, total } = await findMoviesPage(page, CATALOG_PAGE_SIZE, kidsOnly);
+  return buildPageView(items, total, page);
+}
+
+/** One page of the local series catalog (the /api/catalog/series listing). */
+export async function getSeriesCatalogPage(
+  page: number,
+  kidsOnly = false,
+): Promise<PageView<ContentSummary>> {
+  const { items, total } = await findSeriesPage(page, CATALOG_PAGE_SIZE, kidsOnly);
+  return buildPageView(items, total, page);
 }

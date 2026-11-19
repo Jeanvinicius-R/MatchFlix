@@ -18,6 +18,8 @@ export interface Genre {
 export interface ContentSummary {
   id: string;
   slug: string;
+  /** TMDB id when the title is linked to one (used by the playback/availability APIs). */
+  tmdbId?: number;
   title: string;
   type: ContentType;
   releaseYear: number;
@@ -25,7 +27,11 @@ export interface ContentSummary {
   durationInMinutes?: number;
   seasonCount?: number;
   synopsis: string;
-  /** A linked video file, or a playback source known without calling external APIs (see services/playback/availability). */
+  /**
+   * A linked video file, a playback source known without calling external APIs
+   * (services/playback/availability), or a VERIFIED association confirmed
+   * AVAILABLE recently (services/playback/playable-titles). Never "exists in the DB".
+   */
   hasVideo: boolean;
   genres: Genre[];
   /** Absent until the media pipeline (uploads/CDN) exists; UI falls back to a styled placeholder. */

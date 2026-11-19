@@ -522,6 +522,7 @@ export function createXtreamAdapter(options: XtreamAdapterOptions): PlaybackAdap
     assetIdHint:
       'Filme "vod:<stream_id>" (ex.: "vod:1234") ou episódio "series:<series_id>:<temporada>:<episódio>" (ex.: "series:55:1:3").',
     licenseReference: config.licenseReference,
+    allowPrivateNetwork: config.allowPrivateNetwork,
 
     async resolve(assetId, { signal }): Promise<ResolvedAsset | AdapterFailure> {
       const parsed = parseXtreamAssetId(assetId.trim());

@@ -66,3 +66,20 @@ services:
       # VERIFIED feita no /admin.
       - key: PEERTUBE_ALLOWED_INSTANCES
         sync: false
+      # Servidores próprios/licenciados (Xtream, M3U, arquivos, API REST) como
+      # lista JSON; formato e exemplo em .env.example. Contém credenciais (ou
+      # "env:NOME" apontando para outras variáveis): preencha só no dashboard do
+      # Render, nunca aqui. Vazio = nenhum servidor. Cada título ainda precisa
+      # de aprovação de um admin com a licença que o cobre.
+      - key: PLAYBACK_SERVERS
+        sync: false
+      # Horas em que uma verificação AVAILABLE ainda vale como "confirmada"
+      # (vazio = 48). Depois disso o título volta a "desconhecido" nos cards.
+      - key: PLAYBACK_AVAILABILITY_FRESH_HOURS
+        sync: false
+      # Segredo da reverificação periódica (POST /api/internal/reverify,
+      # chamada pelo workflow playback-reverify.yml). Gere um valor longo e
+      # aleatório e use o MESMO no secret CRON_SECRET do GitHub. Vazio =
+      # endpoint desativado.
+      - key: CRON_SECRET
+        sync: false

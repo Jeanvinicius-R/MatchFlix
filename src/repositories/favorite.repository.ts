@@ -8,6 +8,7 @@ import {
   mapMovieToContentSummary,
   mapSeriesToContentSummary,
 } from "@/repositories/content.mapper";
+import { getPlayableLookup } from "@/services/playback/playable-titles.default";
 import type { ContentSummary } from "@/types/content.types";
 
 export type FavoriteTarget = { kind: "movie" | "series"; contentId: string };
@@ -19,21 +20,24 @@ export async function findFavoriteContent(
 ): Promise<ContentSummary[]> {
   const visible = { isActive: true, ...ageRatingFilterFor(kidsOnly) };
 
-  const favorites = await prisma.favorite.findMany({
-    where: {
-      profileId,
-      OR: [{ movie: visible }, { series: visible }],
-    },
-    orderBy: { createdAt: "desc" },
-    select: {
-      movie: { select: MOVIE_SELECT },
-      series: { select: SERIES_SELECT },
-    },
-  });
+  const [favorites, playable] = await Promise.all([
+    prisma.favorite.findMany({
+      where: {
+        profileId,
+        OR: [{ movie: visible }, { series: visible }],
+      },
+      orderBy: { createdAt: "desc" },
+      select: {
+        movie: { select: MOVIE_SELECT },
+        series: { select: SERIES_SELECT },
+      },
+    }),
+    getPlayableLookup(),
+  ]);
 
   return favorites.flatMap(({ movie, series }) => {
-    if (movie) return [mapMovieToContentSummary(movie)];
-    if (series) return [mapSeriesToContentSummary(series)];
+    if (movie) return [mapMovieToContentSummary(movie, playable)];
+    if (series) return [mapSeriesToContentSummary(series, playable)];
     return [];
   });
 }

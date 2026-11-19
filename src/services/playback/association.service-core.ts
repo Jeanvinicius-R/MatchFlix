@@ -109,6 +109,16 @@ export interface VerifyResult {
   reason?: string;
 }
 
+/** What the admin screens may know about an adapter (nothing secret). */
+export interface AdapterInfo {
+  id: string;
+  label: string;
+  assetIdHint: string;
+  canDiscover: boolean;
+  canListCatalog: boolean;
+  suggestedLicenseReference?: string;
+}
+
 interface OpenFilm {
   tmdbId: number;
   assetId: string;
@@ -348,8 +358,23 @@ export function createAssociationService(deps: AssociationServiceDeps) {
       return { created, skipped };
     },
 
-    listAdapters(): { id: string; label: string; assetIdHint: string }[] {
-      return adapters.map(({ id, label, assetIdHint }) => ({ id, label, assetIdHint }));
+    listAdapters(): AdapterInfo[] {
+      return adapters.map((adapter) => {
+        const info: AdapterInfo = {
+          id: adapter.id,
+          label: adapter.label,
+          assetIdHint: adapter.assetIdHint,
+          canDiscover: typeof adapter.discover === "function",
+          canListCatalog: typeof adapter.listCatalog === "function",
+        };
+
+        // Only pre-fills the admin's approval text; it never grants rights.
+        if (adapter.licenseReference) {
+          info.suggestedLicenseReference = adapter.licenseReference;
+        }
+
+        return info;
+      });
     },
   };
 }

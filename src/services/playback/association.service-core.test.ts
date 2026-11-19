@@ -516,13 +516,42 @@ describe("seedOpenFilmAssociations", () => {
 });
 
 describe("listAdapters", () => {
-  it("exposes only id, label and the asset hint", () => {
+  it("exposes id, label, the asset hint and the capabilities", () => {
     const { service } = setup();
 
     assert.deepEqual(service.listAdapters(), [
-      { id: "archive", label: "Label archive", assetIdHint: "hint archive" },
-      { id: "peertube", label: "Label peertube", assetIdHint: "hint peertube" },
+      {
+        id: "archive",
+        label: "Label archive",
+        assetIdHint: "hint archive",
+        canDiscover: false,
+        canListCatalog: false,
+      },
+      {
+        id: "peertube",
+        label: "Label peertube",
+        assetIdHint: "hint peertube",
+        canDiscover: false,
+        canListCatalog: false,
+      },
     ]);
+  });
+
+  it("reports discover/listCatalog and the provider-level license suggestion", () => {
+    const server: PlaybackAdapter = {
+      ...fakeAdapter("meu-servidor"),
+      discover: async () => [],
+      listCatalog: async () => ({ items: [] }),
+      licenseReference: "Contrato 2026/17 com o distribuidor X",
+    };
+    const { service } = setup([fakeAdapter("archive"), server]);
+    const [plain, configured] = service.listAdapters();
+
+    assert.equal(plain.canDiscover, false);
+    assert.equal("suggestedLicenseReference" in plain, false);
+    assert.equal(configured.canDiscover, true);
+    assert.equal(configured.canListCatalog, true);
+    assert.equal(configured.suggestedLicenseReference, "Contrato 2026/17 com o distribuidor X");
   });
 });
 

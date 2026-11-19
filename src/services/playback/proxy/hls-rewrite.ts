@@ -109,7 +109,7 @@ export function rewriteHlsManifest(
     }
   }
 
-  const lines = manifest.replace(/^﻿/, "").split(/\r\n|\n|\r/);
+  const lines = manifest.replace(/^\uFEFF/, "").split(/\r\n|\n|\r/);
   const firstLine = lines.find((line) => line.trim() !== "");
 
   if (firstLine === undefined || firstLine.trim() !== "#EXTM3U") {

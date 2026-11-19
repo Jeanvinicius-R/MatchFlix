@@ -4,6 +4,7 @@ import {
   mapMovieToContentSummary,
   mapSeriesToContentSummary,
 } from "@/repositories/content.mapper";
+import { getPlayableLookup } from "@/services/playback/playable-titles.default";
 
 export const MOVIE_SELECT = {
   id: true,
@@ -48,7 +49,7 @@ export function ageRatingFilterFor(kidsOnly: boolean) {
 export async function findAllContent(kidsOnly = false): Promise<ContentSummary[]> {
   const ageRatingFilter = ageRatingFilterFor(kidsOnly);
 
-  const [movies, series] = await Promise.all([
+  const [movies, series, playable] = await Promise.all([
     prisma.movie.findMany({
       where: { isActive: true, ...ageRatingFilter },
       select: MOVIE_SELECT,
@@ -57,24 +58,28 @@ export async function findAllContent(kidsOnly = false): Promise<ContentSummary[]
       where: { isActive: true, ...ageRatingFilter },
       select: SERIES_SELECT,
     }),
+    getPlayableLookup(),
   ]);
 
   return [
-    ...movies.map(mapMovieToContentSummary),
-    ...series.map(mapSeriesToContentSummary),
+    ...movies.map((movie) => mapMovieToContentSummary(movie, playable)),
+    ...series.map((item) => mapSeriesToContentSummary(item, playable)),
   ];
 }
 
 export async function findFeaturedContent(
   kidsOnly = false,
 ): Promise<ContentSummary | null> {
-  const movie = await prisma.movie.findFirst({
-    where: { isActive: true, ...ageRatingFilterFor(kidsOnly) },
-    orderBy: { createdAt: "asc" },
-    select: MOVIE_SELECT,
-  });
+  const [movie, playable] = await Promise.all([
+    prisma.movie.findFirst({
+      where: { isActive: true, ...ageRatingFilterFor(kidsOnly) },
+      orderBy: { createdAt: "asc" },
+      select: MOVIE_SELECT,
+    }),
+    getPlayableLookup(),
+  ]);
 
-  return movie ? mapMovieToContentSummary(movie) : null;
+  return movie ? mapMovieToContentSummary(movie, playable) : null;
 }
 
 export async function findContentByGenreSlug(
@@ -84,7 +89,7 @@ export async function findContentByGenreSlug(
   const genreFilter = { genres: { some: { slug: genreSlug } } };
   const ageRatingFilter = ageRatingFilterFor(kidsOnly);
 
-  const [movies, series] = await Promise.all([
+  const [movies, series, playable] = await Promise.all([
     prisma.movie.findMany({
       where: { isActive: true, ...genreFilter, ...ageRatingFilter },
       select: MOVIE_SELECT,
@@ -93,30 +98,37 @@ export async function findContentByGenreSlug(
       where: { isActive: true, ...genreFilter, ...ageRatingFilter },
       select: SERIES_SELECT,
     }),
+    getPlayableLookup(),
   ]);
 
   return [
-    ...movies.map(mapMovieToContentSummary),
-    ...series.map(mapSeriesToContentSummary),
+    ...movies.map((movie) => mapMovieToContentSummary(movie, playable)),
+    ...series.map((item) => mapSeriesToContentSummary(item, playable)),
   ];
 }
 
 export async function findAllMovies(kidsOnly = false): Promise<ContentSummary[]> {
-  const movies = await prisma.movie.findMany({
-    where: { isActive: true, ...ageRatingFilterFor(kidsOnly) },
-    orderBy: { title: "asc" },
-    select: MOVIE_SELECT,
-  });
-  return movies.map(mapMovieToContentSummary);
+  const [movies, playable] = await Promise.all([
+    prisma.movie.findMany({
+      where: { isActive: true, ...ageRatingFilterFor(kidsOnly) },
+      orderBy: { title: "asc" },
+      select: MOVIE_SELECT,
+    }),
+    getPlayableLookup(),
+  ]);
+  return movies.map((movie) => mapMovieToContentSummary(movie, playable));
 }
 
 export async function findAllSeries(kidsOnly = false): Promise<ContentSummary[]> {
-  const series = await prisma.series.findMany({
-    where: { isActive: true, ...ageRatingFilterFor(kidsOnly) },
-    orderBy: { title: "asc" },
-    select: SERIES_SELECT,
-  });
-  return series.map(mapSeriesToContentSummary);
+  const [series, playable] = await Promise.all([
+    prisma.series.findMany({
+      where: { isActive: true, ...ageRatingFilterFor(kidsOnly) },
+      orderBy: { title: "asc" },
+      select: SERIES_SELECT,
+    }),
+    getPlayableLookup(),
+  ]);
+  return series.map((item) => mapSeriesToContentSummary(item, playable));
 }
 
 const CONTINUE_WATCHING_LIMIT = 20;
@@ -133,32 +145,37 @@ export async function findContinueWatching(
 ): Promise<ContentSummary[]> {
   const ageRatingFilter = ageRatingFilterFor(kidsOnly);
 
-  const progress = await prisma.watchProgress.findMany({
-    where: {
-      profileId,
-      completed: false,
-      OR: [
-        { movie: { isActive: true, ...ageRatingFilter } },
-        { episode: { season: { series: { isActive: true, ...ageRatingFilter } } } },
-      ],
-    },
-    orderBy: { updatedAt: "desc" },
-    take: CONTINUE_WATCHING_LIMIT,
-    select: {
-      movie: { select: MOVIE_SELECT },
-      episode: { select: { season: { select: { series: { select: SERIES_SELECT } } } } },
-    },
-  });
+  const [progress, playable] = await Promise.all([
+    prisma.watchProgress.findMany({
+      where: {
+        profileId,
+        completed: false,
+        OR: [
+          { movie: { isActive: true, ...ageRatingFilter } },
+          { episode: { season: { series: { isActive: true, ...ageRatingFilter } } } },
+        ],
+      },
+      orderBy: { updatedAt: "desc" },
+      take: CONTINUE_WATCHING_LIMIT,
+      select: {
+        movie: { select: MOVIE_SELECT },
+        episode: {
+          select: { season: { select: { series: { select: SERIES_SELECT } } } },
+        },
+      },
+    }),
+    getPlayableLookup(),
+  ]);
 
   const items: ContentSummary[] = [];
   const seenSeriesIds = new Set<string>();
 
   for (const row of progress) {
     if (row.movie) {
-      items.push(mapMovieToContentSummary(row.movie));
+      items.push(mapMovieToContentSummary(row.movie, playable));
     } else if (row.episode && !seenSeriesIds.has(row.episode.season.series.id)) {
       seenSeriesIds.add(row.episode.season.series.id);
-      items.push(mapSeriesToContentSummary(row.episode.season.series));
+      items.push(mapSeriesToContentSummary(row.episode.season.series, playable));
     }
   }
 
@@ -180,7 +197,7 @@ export async function searchContent(
   };
   const where = { isActive: true, ...ageRatingFilterFor(kidsOnly), ...textFilter };
 
-  const [movies, series] = await Promise.all([
+  const [movies, series, playable] = await Promise.all([
     prisma.movie.findMany({
       where,
       orderBy: { title: "asc" },
@@ -193,10 +210,65 @@ export async function searchContent(
       take: SEARCH_RESULT_LIMIT,
       select: SERIES_SELECT,
     }),
+    getPlayableLookup(),
   ]);
 
   return [
-    ...movies.map(mapMovieToContentSummary),
-    ...series.map(mapSeriesToContentSummary),
+    ...movies.map((movie) => mapMovieToContentSummary(movie, playable)),
+    ...series.map((item) => mapSeriesToContentSummary(item, playable)),
   ];
+}
+
+/** One page of a catalog listing plus the total, for the paginated catalog API. */
+export interface LocalCatalogPage {
+  items: ContentSummary[];
+  total: number;
+}
+
+/** Active movies by title, `pageSize` at a time (`page` starts at 1). */
+export async function findMoviesPage(
+  page: number,
+  pageSize: number,
+  kidsOnly = false,
+): Promise<LocalCatalogPage> {
+  const where = { isActive: true, ...ageRatingFilterFor(kidsOnly) };
+  const [movies, total, playable] = await Promise.all([
+    prisma.movie.findMany({
+      where,
+      orderBy: [{ title: "asc" }, { id: "asc" }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      select: MOVIE_SELECT,
+    }),
+    prisma.movie.count({ where }),
+    getPlayableLookup(),
+  ]);
+  return {
+    items: movies.map((movie) => mapMovieToContentSummary(movie, playable)),
+    total,
+  };
+}
+
+/** Active series by title, `pageSize` at a time (`page` starts at 1). */
+export async function findSeriesPage(
+  page: number,
+  pageSize: number,
+  kidsOnly = false,
+): Promise<LocalCatalogPage> {
+  const where = { isActive: true, ...ageRatingFilterFor(kidsOnly) };
+  const [series, total, playable] = await Promise.all([
+    prisma.series.findMany({
+      where,
+      orderBy: [{ title: "asc" }, { id: "asc" }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      select: SERIES_SELECT,
+    }),
+    prisma.series.count({ where }),
+    getPlayableLookup(),
+  ]);
+  return {
+    items: series.map((item) => mapSeriesToContentSummary(item, playable)),
+    total,
+  };
 }

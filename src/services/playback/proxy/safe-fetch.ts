@@ -1,6 +1,6 @@
 import { lookup as dnsLookup } from "node:dns/promises";
 import http, { type IncomingMessage } from "node:http";
-import https from "node:https";
+import https, { type RequestOptions as HttpsRequestOptions } from "node:https";
 import { isIP, isIPv4, isIPv6 } from "node:net";
 import { pipeline, Readable } from "node:stream";
 import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
@@ -390,30 +390,31 @@ function requestOnce(
   return new Promise<IncomingMessage>((resolve, reject) => {
     const secure = url.protocol === "https:";
     const hostIsLiteral = isIP(url.hostname.replace(/^\[|\]$/g, "")) !== 0;
-    const request = (secure ? https : http).request(
-      {
-        host: target.address,
-        family: target.family,
-        port: url.port !== "" ? Number(url.port) : secure ? 443 : 80,
-        method,
-        path: `${url.pathname}${url.search}`,
-        headers: { ...headers, host: url.host },
-        // SNI and certificate checks use the NAME, the socket uses the IP.
-        ...(secure && !hostIsLiteral ? { servername: url.hostname } : {}),
-        agent: false,
-        signal,
-      },
-      (response) => {
-        clearTimeout(timer);
-        resolve(response);
-      },
-    );
+    const requestOptions: HttpsRequestOptions = {
+      host: target.address,
+      family: target.family,
+      port: url.port !== "" ? Number(url.port) : secure ? 443 : 80,
+      method,
+      path: `${url.pathname}${url.search}`,
+      headers: { ...headers, host: url.host },
+      // SNI and certificate checks use the NAME, the socket uses the IP.
+      ...(secure && !hostIsLiteral ? { servername: url.hostname } : {}),
+      agent: false,
+      signal,
+    };
+    const onResponse = (response: IncomingMessage) => {
+      clearTimeout(timer);
+      resolve(response);
+    };
+    const request = secure
+      ? https.request(requestOptions, onResponse)
+      : http.request(requestOptions, onResponse);
 
     const timer = setTimeout(() => {
       request.destroy(new Error("Tempo esgotado ao aguardar a resposta."));
     }, HEADERS_TIMEOUT_MS);
 
-    request.once("error", (error) => {
+    request.on("error", (error) => {
       clearTimeout(timer);
       reject(error);
     });
@@ -535,7 +536,10 @@ export function createSafeFetch(options: SafeFetchOptions = {}): typeof fetch {
     lookup: options.lookup,
   };
 
-  return async function safeFetchImpl(input, init) {
+  async function safeFetchImpl(
+    input: string | URL | Request,
+    init?: RequestInit,
+  ): Promise<Response> {
     const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
 
     if (init?.body !== undefined && init.body !== null) {
@@ -620,7 +624,9 @@ export function createSafeFetch(options: SafeFetchOptions = {}): typeof fetch {
 
       url = next;
     }
-  };
+  }
+
+  return safeFetchImpl as typeof fetch;
 }
 
 /** Default instance: public network only. */

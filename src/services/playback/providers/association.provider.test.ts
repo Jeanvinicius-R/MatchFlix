@@ -6,6 +6,7 @@ import {
   type AssociationCandidate,
   type AssociationCandidateQuery,
 } from "./association.provider";
+import { PROXY_PATH_PREFIX, readProxyToken } from "../proxy/proxy-token";
 
 const ASSET: ResolvedAsset = {
   type: "direct",
@@ -324,5 +325,128 @@ describe("createAssociationProvider: remote failures never throw", () => {
     });
 
     assert.equal(await provider.getMovieSource({ tmdbId: 1 }), null);
+  });
+});
+
+describe("createAssociationProvider: proxied media", () => {
+  const PROXIED: ResolvedAsset = {
+    type: "hls",
+    mimeType: "application/vnd.apple.mpegurl",
+    label: "Servidor do operador",
+    qualities: [{ label: "720p", url: "https://cdn.example.org/720.mp4" }],
+    proxy: {
+      upstreamUrl: "https://media.example.org/vod/42/master.m3u8?api_key=s3cr3t-key",
+      headers: { Authorization: "Bearer s3cr3t-token" },
+      allowedOrigins: ["https://media.example.org"],
+    },
+  };
+
+  let previousSecret: string | undefined;
+
+  beforeEach(() => {
+    previousSecret = process.env.AUTH_SECRET;
+    process.env.AUTH_SECRET = "test-secret-for-the-association-provider";
+  });
+
+  afterEach(() => {
+    if (previousSecret === undefined) {
+      delete process.env.AUTH_SECRET;
+    } else {
+      process.env.AUTH_SECRET = previousSecret;
+    }
+  });
+
+  function proxiedProvider(asset: ResolvedAsset = PROXIED) {
+    const { adapter } = fakeAdapter(async () => asset);
+
+    return createAssociationProvider({
+      adapter,
+      repository: fakeRepository([candidate({ id: "assoc-77" })]),
+    });
+  }
+
+  it("turns proxied media into a same-origin token URL bound to the viewer and association", async () => {
+    const source = await proxiedProvider().getMovieSource({
+      tmdbId: 1,
+      viewerId: "user-1",
+    });
+
+    assert.ok(source);
+    assert.match(source.url, /^\/api\/playback\/proxy\/[A-Za-z0-9_-]{16,}$/);
+    assert.equal(source.type, "hls");
+    assert.equal(source.mimeType, "application/vnd.apple.mpegurl");
+    assert.equal(source.label, "Servidor do operador");
+    assert.deepEqual(source.qualities, PROXIED.qualities);
+
+    const payload = readProxyToken(source.url.slice(PROXY_PATH_PREFIX.length));
+
+    assert.ok(payload);
+    assert.equal(payload.userId, "user-1");
+    assert.equal(payload.associationId, "assoc-77");
+    assert.equal(payload.allowPrivateNetwork, false);
+    assert.equal(payload.upstreamUrl, PROXIED.proxy?.upstreamUrl);
+  });
+
+  it("never leaks the upstream URL or credentials into the source", async () => {
+    const source = await proxiedProvider().getMovieSource({ tmdbId: 1, viewerId: "user-1" });
+    const json = JSON.stringify(source);
+
+    for (const secret of ["media.example.org", "s3cr3t", "api_key", "Bearer"]) {
+      assert.ok(!json.includes(secret), secret);
+    }
+  });
+
+  it("carries allowPrivateNetwork into the token only when the adapter declares it", async () => {
+    const asset: ResolvedAsset = {
+      type: "direct",
+      proxy: {
+        upstreamUrl: "http://10.0.0.5:8096/video.mp4",
+        allowedOrigins: ["http://10.0.0.5:8096"],
+        allowPrivateNetwork: true,
+      },
+    };
+    const source = await proxiedProvider(asset).getMovieSource({ tmdbId: 1, viewerId: "u" });
+
+    assert.ok(source);
+    assert.equal(
+      readProxyToken(source.url.slice(PROXY_PATH_PREFIX.length))?.allowPrivateNetwork,
+      true,
+    );
+  });
+
+  it("does not touch proxied media without a viewer", async () => {
+    assert.equal(await proxiedProvider().getMovieSource({ tmdbId: 1 }), null);
+  });
+
+  it("returns null (with a warning) when no AUTH_SECRET can sign the token", async () => {
+    delete process.env.AUTH_SECRET;
+
+    assert.equal(
+      await proxiedProvider().getMovieSource({ tmdbId: 1, viewerId: "user-1" }),
+      null,
+    );
+    assert.ok(warn.mock.callCount() > 0);
+    assert.ok(!JSON.stringify(warn.mock.calls.map((call) => call.arguments)).includes("s3cr3t"));
+  });
+
+  it("returns null when the adapter's origins do not cover its own upstream URL", async () => {
+    const asset: ResolvedAsset = {
+      type: "direct",
+      proxy: {
+        upstreamUrl: "https://media.example.org/film.mp4",
+        allowedOrigins: ["https://other.example.org"],
+      },
+    };
+
+    assert.equal(
+      await proxiedProvider(asset).getMovieSource({ tmdbId: 1, viewerId: "user-1" }),
+      null,
+    );
+  });
+
+  it("still serves public https media without a viewer", async () => {
+    const source = await proxiedProvider(ASSET).getMovieSource({ tmdbId: 1 });
+
+    assert.equal(source?.url, "https://cdn.example.org/film.mp4");
   });
 });

@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth";
+import { findAssociationById } from "@/repositories/playback-association.repository";
 import { handleProxyRequest, onStreamEnd } from "@/services/playback/proxy/proxy-core";
 
 export const runtime = "nodejs";
@@ -33,6 +34,21 @@ function releaseSlot(userId: string): void {
   } else {
     activeStreams.set(userId, current - 1);
   }
+}
+
+/**
+ * Rights are decided in the database, not in the token: a REVOKED/EXPIRED/
+ * UNVERIFIED association, one flagged UNAVAILABLE or one that was removed
+ * stops the stream on the very next request (the proxy answers 410).
+ */
+async function isAssociationPlayable(associationId: string): Promise<boolean> {
+  const association = await findAssociationById(associationId);
+
+  return (
+    association !== null &&
+    association.rightsStatus === "VERIFIED" &&
+    association.availabilityStatus !== "UNAVAILABLE"
+  );
 }
 
 function plain(status: number, message: string, extra: Record<string, string> = {}) {
@@ -80,6 +96,7 @@ async function serve(request: Request, { params }: RouteContext) {
       rangeHeader: request.headers.get("range"),
       ifRangeHeader: request.headers.get("if-range"),
       viewerId,
+      isAssociationPlayable,
       signal: request.signal,
     });
 

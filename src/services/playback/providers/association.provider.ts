@@ -116,6 +116,9 @@ export function createAssociationProvider(
                 headers: result.proxy.headers,
                 allowedOrigins: result.proxy.allowedOrigins,
                 userId: viewerId,
+                // The proxy re-checks this association on every request.
+                associationId: candidate.id,
+                allowPrivateNetwork: result.proxy.allowPrivateNetwork === true,
               }),
             );
           } catch (error) {

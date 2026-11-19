@@ -166,3 +166,25 @@ export async function findVerifiedTmdbIds(
 
   return rows.map((row) => row.tmdbId);
 }
+
+/**
+ * VERIFIED associations for the periodic re-check, never-checked and oldest
+ * first. `includeUnavailable` keeps the ones flagged UNAVAILABLE in the list so
+ * a provider that came back can recover.
+ */
+export async function findAssociationIdsForReverification(options: {
+  limit: number;
+  includeUnavailable: boolean;
+}): Promise<string[]> {
+  const rows = await prisma.playbackAssociation.findMany({
+    where: {
+      rightsStatus: "VERIFIED",
+      availabilityStatus: options.includeUnavailable ? undefined : { not: "UNAVAILABLE" },
+    },
+    orderBy: [{ lastVerifiedAt: { sort: "asc", nulls: "first" } }, { createdAt: "asc" }],
+    take: options.limit,
+    select: { id: true },
+  });
+
+  return rows.map((row) => row.id);
+}

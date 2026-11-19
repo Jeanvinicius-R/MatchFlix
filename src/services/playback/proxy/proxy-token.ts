@@ -10,8 +10,12 @@ import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:
  * from AUTH_SECRET with a purpose label, so it is never the session key itself.
  *
  * Layout (base64url): iv (12 bytes) | ciphertext | auth tag (16 bytes).
- * Plaintext: {"v":1,"u":url,"h":headers,"o":origins,"uid":userId,"e":expiry}
- * with `e` in epoch SECONDS.
+ * Plaintext: {"v":1,"u":url,"h":headers,"o":origins,"uid":userId,"aid":assocId,
+ * "p":allowPrivate,"e":expiry} with `e` in epoch SECONDS.
+ *
+ * `aid` ties the token to the PlaybackAssociation that authorized the media:
+ * the proxy re-checks it in the database on EVERY request, so revoking an
+ * association stops the stream even while tokens are still unexpired.
  */
 
 export interface ProxyTokenInput {
@@ -23,6 +27,10 @@ export interface ProxyTokenInput {
   allowedOrigins: string[];
   /** The only user who may use the token. */
   userId: string;
+  /** PlaybackAssociation that authorizes this media; re-checked on every request. */
+  associationId: string;
+  /** Operator-declared private-network server (default false). */
+  allowPrivateNetwork?: boolean;
 }
 
 export interface ProxyTokenPayload {
@@ -31,6 +39,8 @@ export interface ProxyTokenPayload {
   /** Normalized origins (as `URL.origin` writes them). */
   allowedOrigins: string[];
   userId: string;
+  associationId: string;
+  allowPrivateNetwork: boolean;
   /** Epoch milliseconds. */
   expiresAt: number;
 }
@@ -191,6 +201,10 @@ function sanitizeOrigins(origins: unknown): string[] | null {
   return result;
 }
 
+function isValidAssociationId(value: unknown): value is string {
+  return typeof value === "string" && value.length >= 1 && value.length <= 128;
+}
+
 /** Throws (with a message that never contains the URL) when the input is unusable. */
 function validateInput(input: ProxyTokenInput) {
   const origin = normalizeOrigin(input.upstreamUrl);
@@ -217,6 +231,14 @@ function validateInput(input: ProxyTokenInput) {
     throw new Error("userId obrigatório para o proxy de mídia.");
   }
 
+  if (!isValidAssociationId(input.associationId)) {
+    throw new Error("associationId obrigatório para o proxy de mídia.");
+  }
+
+  if (input.allowPrivateNetwork !== undefined && typeof input.allowPrivateNetwork !== "boolean") {
+    throw new Error("allowPrivateNetwork inválido para o proxy de mídia.");
+  }
+
   return { allowedOrigins, headers };
 }
 
@@ -240,6 +262,8 @@ export function mintProxyToken(
     h: headers,
     o: allowedOrigins,
     uid: input.userId,
+    aid: input.associationId,
+    p: input.allowPrivateNetwork === true,
     e: Math.floor(now / 1000) + ttlSeconds,
   });
 
@@ -302,6 +326,8 @@ export function readProxyToken(
       typeof record.u !== "string" ||
       typeof record.uid !== "string" ||
       record.uid === "" ||
+      !isValidAssociationId(record.aid) ||
+      typeof record.p !== "boolean" ||
       typeof record.e !== "number" ||
       !Number.isFinite(record.e)
     ) {
@@ -332,6 +358,8 @@ export function readProxyToken(
       headers,
       allowedOrigins,
       userId: record.uid,
+      associationId: record.aid,
+      allowPrivateNetwork: record.p,
       expiresAt,
     };
   } catch {
