@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import { getYouTubeVideoId } from "@/components/playback/youtube-url";
+import { isBootstrapAdminEmail } from "./admin-bootstrap";
 import { parseRange } from "./http-range";
 import { safeNextPath } from "./next-path";
 import {
@@ -39,6 +40,20 @@ describe("parseRange", () => {
     assert.equal(parseRange("bytes=1000-", 1000), null);
     assert.equal(parseRange("bytes=-", 1000), null);
     assert.equal(parseRange("items=0-1", 1000), null);
+  });
+});
+
+describe("isBootstrapAdminEmail", () => {
+  it("matches the configured e-mail ignoring case and whitespace", () => {
+    assert.equal(isBootstrapAdminEmail("dono@exemplo.com", " Dono@Exemplo.com "), true);
+    assert.equal(isBootstrapAdminEmail(" DONO@exemplo.com", "dono@exemplo.com"), true);
+  });
+
+  it("never matches when unset, empty or a different e-mail", () => {
+    assert.equal(isBootstrapAdminEmail("dono@exemplo.com", undefined), false);
+    assert.equal(isBootstrapAdminEmail("dono@exemplo.com", ""), false);
+    assert.equal(isBootstrapAdminEmail("dono@exemplo.com", "   "), false);
+    assert.equal(isBootstrapAdminEmail("outro@exemplo.com", "dono@exemplo.com"), false);
   });
 });
 

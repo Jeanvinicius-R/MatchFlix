@@ -52,7 +52,8 @@ export async function GET(
     const sources = await getEpisodePlaybackSources(
       id,
       seasonNumber,
-      episodeNumber
+      episodeNumber,
+      session.user.id
     );
 
     return NextResponse.json({

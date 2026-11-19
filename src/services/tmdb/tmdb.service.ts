@@ -1,5 +1,7 @@
 import { tmdbGet } from "@/services/tmdb/tmdb.client";
 import {
+  mapExternalIds,
+  mapFindResult,
   mapMovieDetails,
   mapMovieSearchResult,
   mapSeasonDetails,
@@ -8,6 +10,10 @@ import {
   mapWatchProviders,
 } from "@/services/tmdb/tmdb.mapper";
 import type {
+  TmdbExternalIds,
+  TmdbExternalIdsRaw,
+  TmdbFindResponseRaw,
+  TmdbFindResult,
   TmdbGenre,
   TmdbGenreListResponse,
   TmdbMovieDetails,
@@ -93,4 +99,24 @@ export async function getMovieWatchProviders(tmdbId: number): Promise<TmdbWatchP
 export async function getSeriesWatchProviders(tmdbId: number): Promise<TmdbWatchProviders> {
   const raw = await tmdbGet<TmdbWatchProvidersRaw>(`/tv/${tmdbId}/watch/providers`);
   return mapWatchProviders(raw, WATCH_PROVIDERS_REGION);
+}
+
+/** IMDb id of a movie (null when TMDB does not know it). Used by the playback discovery only. */
+export async function getMovieExternalIds(tmdbId: number): Promise<TmdbExternalIds> {
+  const raw = await tmdbGet<TmdbExternalIdsRaw>(`/movie/${tmdbId}/external_ids`);
+  return mapExternalIds(raw);
+}
+
+/** IMDb id of a series (null when TMDB does not know it). */
+export async function getSeriesExternalIds(tmdbId: number): Promise<TmdbExternalIds> {
+  const raw = await tmdbGet<TmdbExternalIdsRaw>(`/tv/${tmdbId}/external_ids`);
+  return mapExternalIds(raw);
+}
+
+/** The TMDB movie / series an IMDb id ("tt1234567") belongs to; absent keys when none. */
+export async function findTmdbByImdbId(imdbId: string): Promise<TmdbFindResult> {
+  const raw = await tmdbGet<TmdbFindResponseRaw>(`/find/${encodeURIComponent(imdbId)}`, {
+    searchParams: { external_source: "imdb_id" },
+  });
+  return mapFindResult(raw);
 }

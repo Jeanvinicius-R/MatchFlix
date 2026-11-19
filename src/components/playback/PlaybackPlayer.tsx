@@ -2,26 +2,18 @@
 
 import { Maximize, Minimize } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { AdaptivePlayer } from "@/components/playback/AdaptivePlayer";
 import { buttonStyles } from "@/components/ui/Button";
 import type { WatchTarget } from "@/components/playback/playback-target";
 import { YouTubePlayer } from "@/components/playback/YouTubePlayer";
 import { getYouTubeVideoId } from "@/components/playback/youtube-url";
 import type { PlaybackSource } from "@/services/playback/playback.types";
 
-// Both checks below never change at runtime; on the server they are reported
-// as unavailable (there is no window/document to ask).
+// The check below never changes at runtime; on the server it is reported as
+// unavailable (there is no document to ask).
 const subscribeToNothing = () => () => {};
 const getFullscreenSupport = () => document.fullscreenEnabled;
 const getServerFullscreenSupport = () => false;
-
-/**
- * Native HLS playback only works where the browser itself understands the
- * format (Safari/iOS). No current provider returns "hls", so hls.js is not
- * bundled — see README "PlaybackPlayer".
- */
-const getHlsSupport = () =>
-  document.createElement("video").canPlayType("application/vnd.apple.mpegurl") !== "";
-const getServerHlsSupport = () => false;
 
 interface PlaybackPlayerProps {
   source: PlaybackSource;
@@ -29,6 +21,10 @@ interface PlaybackPlayerProps {
   target?: WatchTarget;
   resumeAt?: number;
   nextHref?: string;
+  /** Start playing on load (direct/hls/dash sources only). */
+  autoPlay?: boolean;
+  /** The current source cannot play and the viewer asked for another one. */
+  onFatalError?: () => void;
 }
 
 /**
@@ -42,6 +38,8 @@ export default function PlaybackPlayer({
   target,
   resumeAt = 0,
   nextHref,
+  autoPlay = false,
+  onFatalError,
 }: PlaybackPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -51,11 +49,6 @@ export default function PlaybackPlayer({
     subscribeToNothing,
     getFullscreenSupport,
     getServerFullscreenSupport,
-  );
-  const supportsHls = useSyncExternalStore(
-    subscribeToNothing,
-    getHlsSupport,
-    getServerHlsSupport,
   );
 
   useEffect(() => {
@@ -118,31 +111,16 @@ export default function PlaybackPlayer({
               : "no-referrer"
           }
         />
-      ) : source.type === "direct" ? (
-        <video
+      ) : source.type === "direct" || source.type === "hls" || source.type === "dash" ? (
+        <AdaptivePlayer
           key={source.id}
-          src={source.url}
-          controls
-          playsInline
-          className="h-full w-full"
+          source={source}
+          target={target}
+          resumeAt={resumeAt}
+          nextHref={nextHref}
+          autoPlay={autoPlay}
+          onFatalError={onFatalError}
         />
-      ) : source.type === "hls" ? (
-        supportsHls ? (
-          <video
-            key={source.id}
-            src={source.url}
-            controls
-            playsInline
-            className="h-full w-full"
-          />
-        ) : (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-1 px-4 text-center text-white">
-            <p>Este navegador não sabe tocar este vídeo (HLS) nativamente.</p>
-            <p className="text-muted-foreground text-sm">
-              Tente no Safari/iOS, ou escolha outra fonte abaixo.
-            </p>
-          </div>
-        )
       ) : source.type === "external" ? (
         <div className="flex h-full w-full flex-col items-center justify-center gap-3 px-4 text-center text-white">
           <p>Esta fonte não pode ser exibida aqui dentro.</p>

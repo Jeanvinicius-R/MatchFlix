@@ -234,3 +234,30 @@ export interface TmdbWatchProviders {
   rent: TmdbWatchProvider[];
   buy: TmdbWatchProvider[];
 }
+
+// ---------------------------------------------------------------------------
+// External ids / find-by-id (used by the playback discovery, never shown to viewers).
+// ---------------------------------------------------------------------------
+
+/** Raw response of GET /movie/{id}/external_ids and /tv/{id}/external_ids. */
+export interface TmdbExternalIdsRaw {
+  id: number;
+  imdb_id?: string | null;
+}
+
+/** Raw response of GET /find/{external_id}?external_source=imdb_id (only the parts we read). */
+export interface TmdbFindResponseRaw {
+  movie_results?: { id: number }[];
+  tv_results?: { id: number }[];
+}
+
+export interface TmdbExternalIds {
+  /** "tt1234567", or null when TMDB does not know it. */
+  imdbId: string | null;
+}
+
+/** The TMDB titles an external id points to; a key is absent when there is no such title. */
+export interface TmdbFindResult {
+  movieId?: number;
+  seriesId?: number;
+}

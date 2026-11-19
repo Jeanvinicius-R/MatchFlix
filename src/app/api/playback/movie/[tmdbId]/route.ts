@@ -33,7 +33,7 @@ export async function GET(
       );
     }
 
-    const sources = await getMoviePlaybackSources(id);
+    const sources = await getMoviePlaybackSources(id, session.user.id);
 
     return NextResponse.json({
       tmdbId: id,
