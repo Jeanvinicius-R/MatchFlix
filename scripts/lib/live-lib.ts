@@ -92,7 +92,6 @@ export function runCommand(
     let carry = "";
     let timedOut = false;
     let settled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
 
     const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
 
@@ -103,14 +102,12 @@ export function runCommand(
 
       settled = true;
 
-      if (timer) {
-        clearTimeout(timer);
-      }
-
+      // `timer` is initialised below, before any event can fire `finish`.
+      clearTimeout(timer);
       resolve(result);
     }
 
-    timer = setTimeout(() => {
+    const timer = setTimeout(() => {
       timedOut = true;
       child.kill("SIGKILL");
     }, options.timeoutMs);
@@ -805,7 +802,13 @@ export function renderMarkdown(title: string, rows: readonly ScenarioRow[]): str
   const videos = rows.filter((row) => row.video);
 
   if (videos.length > 0) {
-    lines.push("", "### Vídeos verificados", "", "| Título | Fonte | Duração | Tempo reproduzido |", "| --- | --- | --- | --- |");
+    lines.push(
+      "",
+      "### Vídeos verificados no provedor (a reprodução no Chrome é comprovada no job e2e-chrome)",
+      "",
+      "| Título | Fonte | Duração |",
+      "| --- | --- | --- |",
+    );
 
     for (const row of videos) {
       const video = row.video;
@@ -817,7 +820,7 @@ export function renderMarkdown(title: string, rows: readonly ScenarioRow[]): str
       lines.push(
         `| ${escapeCell(video.title)} | ${escapeCell(video.source)} | ${
           video.durationSeconds !== undefined ? `${video.durationSeconds.toFixed(1)} s` : "—"
-        } | ${video.playedSeconds !== undefined ? `${video.playedSeconds.toFixed(1)} s` : "—"} |`,
+        } |`,
       );
     }
   }
