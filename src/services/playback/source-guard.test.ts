@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { describe, it, mock } from "node:test";
 import { createPlaybackResolver } from "./playback.resolver";
 import type { PlaybackProvider, PlaybackSource, PlaybackType } from "./playback.types";
-import { describeSourceProblem, sanitizeSource } from "./source-guard";
+import {
+  describeProxiedMediaProblem,
+  describeSourceProblem,
+  sanitizeSource,
+} from "./source-guard";
 
 function source(overrides: Partial<PlaybackSource> = {}): PlaybackSource {
   return {
@@ -206,6 +210,77 @@ describe("sanitizeSource: extras", () => {
 
     assert.equal(input.qualities?.length, 1);
     assert.equal(input.attribution?.sourceUrl, "javascript:alert(1)");
+  });
+});
+
+describe("describeProxiedMediaProblem", () => {
+  const ORIGIN = "https://media.example.org";
+  const media = { upstreamUrl: `${ORIGIN}/movie/u/secret/1.mp4`, allowedOrigins: [ORIGIN] };
+
+  it("accepts direct/hls on an allowed origin, credentials in the URL included", () => {
+    assert.equal(describeProxiedMediaProblem("direct", media), null);
+    assert.equal(describeProxiedMediaProblem("hls", media), null);
+    assert.equal(
+      describeProxiedMediaProblem("direct", {
+        upstreamUrl: "http://10.0.0.5:8080/movie/u/p/1.mp4",
+        allowedOrigins: ["http://10.0.0.5:8080"],
+      }),
+      null,
+    );
+  });
+
+  it("compares origins after normalisation (default port, host case)", () => {
+    assert.equal(
+      describeProxiedMediaProblem("direct", {
+        upstreamUrl: "https://MEDIA.example.org:443/a.mp4",
+        allowedOrigins: ["https://media.example.org"],
+      }),
+      null,
+    );
+  });
+
+  it("refuses types the proxy cannot serve", () => {
+    for (const type of ["dash", "iframe", "external"] as const) {
+      assert.notEqual(describeProxiedMediaProblem(type, media), null, type);
+    }
+  });
+
+  it("refuses an upstream outside the allowed origins, with no origins, or not http(s)", () => {
+    assert.notEqual(
+      describeProxiedMediaProblem("direct", { ...media, allowedOrigins: ["https://x.example.org"] }),
+      null,
+    );
+    assert.notEqual(describeProxiedMediaProblem("direct", { ...media, allowedOrigins: [] }), null);
+
+    for (const upstreamUrl of ["file:///etc/passwd", "ftp://media.example.org/a", "nope", ""]) {
+      assert.notEqual(
+        describeProxiedMediaProblem("direct", { upstreamUrl, allowedOrigins: [ORIGIN] }),
+        null,
+        upstreamUrl,
+      );
+    }
+  });
+
+  it("a different port is a different origin", () => {
+    assert.notEqual(
+      describeProxiedMediaProblem("direct", {
+        upstreamUrl: "https://media.example.org:8443/a.mp4",
+        allowedOrigins: [ORIGIN],
+      }),
+      null,
+    );
+  });
+
+  it("never echoes the upstream URL (it may hold credentials)", () => {
+    const problems = [
+      describeProxiedMediaProblem("dash", media),
+      describeProxiedMediaProblem("direct", { ...media, allowedOrigins: ["https://x.example.org"] }),
+      describeProxiedMediaProblem("direct", { upstreamUrl: "ftp://u:secret@h/a", allowedOrigins: [ORIGIN] }),
+    ];
+
+    for (const problem of problems) {
+      assert.ok(problem && !problem.includes("secret"));
+    }
   });
 });
 

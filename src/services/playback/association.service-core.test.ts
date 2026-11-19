@@ -389,6 +389,69 @@ describe("verifyAssociation", () => {
     assert.equal(result.availabilityStatus, "UNAVAILABLE");
   });
 
+  describe("protected (proxied) media", () => {
+    const ORIGIN = "https://media.example.org";
+    const SECRET_URL = `${ORIGIN}/movie/user/s3cr3t/42.mp4`;
+
+    function proxied(overrides: {
+      type?: "direct" | "hls" | "dash";
+      upstreamUrl?: string;
+      allowedOrigins?: string[];
+    }): ResolvedAsset {
+      return {
+        type: overrides.type ?? "direct",
+        proxy: {
+          upstreamUrl: overrides.upstreamUrl ?? SECRET_URL,
+          allowedOrigins: overrides.allowedOrigins ?? [ORIGIN],
+        },
+      };
+    }
+
+    it("is AVAILABLE when the proxy could serve it (no public url needed)", async () => {
+      const { service, rows } = setup([fakeAdapter("archive", async () => proxied({}))]);
+      const created = await service.createAssociation(MOVIE);
+
+      assert.deepEqual(await service.verifyAssociation(created.id), {
+        availabilityStatus: "AVAILABLE",
+      });
+      assert.equal(rows.get(created.id)?.availabilityStatus, "AVAILABLE");
+    });
+
+    it("is UNAVAILABLE when the upstream is outside the allowed origins", async () => {
+      const { service } = setup([
+        fakeAdapter("archive", async () =>
+          proxied({ allowedOrigins: ["https://other.example.org"] }),
+        ),
+      ]);
+      const created = await service.createAssociation(MOVIE);
+      const result = await service.verifyAssociation(created.id);
+
+      assert.equal(result.availabilityStatus, "UNAVAILABLE");
+      assert.match(result.reason ?? "", /origens permitidas/);
+    });
+
+    it("is UNAVAILABLE for DASH (a manifest the proxy cannot rewrite)", async () => {
+      const { service } = setup([
+        fakeAdapter("archive", async () => proxied({ type: "dash" })),
+      ]);
+      const created = await service.createAssociation(MOVIE);
+
+      assert.equal((await service.verifyAssociation(created.id)).availabilityStatus, "UNAVAILABLE");
+    });
+
+    it("never puts the upstream URL or its credentials in the reason", async () => {
+      const { service } = setup([
+        fakeAdapter("archive", async () => proxied({ allowedOrigins: [] })),
+      ]);
+      const created = await service.createAssociation(MOVIE);
+      const result = await service.verifyAssociation(created.id);
+
+      assert.equal(result.availabilityStatus, "UNAVAILABLE");
+      assert.ok(!(result.reason ?? "").includes("s3cr3t"));
+      assert.ok(!(result.reason ?? "").includes(SECRET_URL));
+    });
+  });
+
   it("marks UNAVAILABLE when the provider is no longer registered", async () => {
     const memory = memoryRepository();
     const row = await memory.repository.create({

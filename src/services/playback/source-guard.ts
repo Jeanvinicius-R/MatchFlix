@@ -94,6 +94,56 @@ export function describeSourceProblem(source: PlaybackSource): string | null {
   return null;
 }
 
+/** The origin ("https://host[:port]") of a URL string, or null when it is not a web URL. */
+function originOf(value: string): string | null {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.origin : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Why a PROXIED asset is unusable, or null when the proxy could serve it. The
+ * upstream URL may carry credentials (it never reaches the browser), so unlike
+ * describeSourceProblem it only needs to be an http(s) URL on an origin the proxy
+ * is allowed to contact. Only direct/hls can be proxied (a DASH manifest cannot
+ * be rewritten). The message never echoes the URL: it may hold secrets.
+ */
+export function describeProxiedMediaProblem(
+  type: PlaybackType,
+  proxy: { upstreamUrl: string; allowedOrigins: readonly string[] },
+): string | null {
+  if (!PROXYABLE_TYPES.has(type)) {
+    return `fontes protegidas só podem ser "direct" ou "hls" (recebido "${String(type)}")`;
+  }
+
+  if (proxy.allowedOrigins.length === 0) {
+    return "nenhuma origem permitida para o proxy";
+  }
+
+  if (
+    typeof proxy.upstreamUrl !== "string" ||
+    proxy.upstreamUrl.length === 0 ||
+    proxy.upstreamUrl.length > MAX_URL_LENGTH
+  ) {
+    return "URL de origem inválida";
+  }
+
+  const upstreamOrigin = originOf(proxy.upstreamUrl);
+
+  if (upstreamOrigin === null) {
+    return "URL de origem inválida (só http/https)";
+  }
+
+  if (!proxy.allowedOrigins.some((allowed) => originOf(allowed) === upstreamOrigin)) {
+    return "a URL de origem está fora das origens permitidas";
+  }
+
+  return null;
+}
+
 /**
  * Returns the source when it is safe to show, or null when it must be dropped.
  * Optional extras (qualities, subtitles, attribution link) with a bad URL are

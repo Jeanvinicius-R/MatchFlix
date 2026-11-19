@@ -8,7 +8,7 @@ import {
 } from "../../schemas/playback-association.schemas";
 import { isAdapterFailure, type PlaybackAdapter } from "./adapters/adapter.types";
 import type { PlaybackSource } from "./playback.types";
-import { describeSourceProblem } from "./source-guard";
+import { describeProxiedMediaProblem, describeSourceProblem } from "./source-guard";
 
 /**
  * Testable core of the association service: every dependency is injected, so
@@ -198,6 +198,14 @@ export function createAssociationService(deps: AssociationServiceDeps) {
 
       if (isAdapterFailure(result)) {
         return result.reason;
+      }
+
+      // Protected media (credentials stay server-side) has no public URL: the
+      // check is that the proxy could serve it. The reason never echoes the URL.
+      if (result.proxy !== undefined) {
+        const proxyProblem = describeProxiedMediaProblem(result.type, result.proxy);
+
+        return proxyProblem ? `Fonte protegida recusada: ${proxyProblem}.` : null;
       }
 
       const source: PlaybackSource = {
