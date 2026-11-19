@@ -3,6 +3,7 @@
   "mock": {
     "host": "127.0.0.1",
     "port": 8099,
+    "embedPort": 8443,
     "xtreamUser": "e2e_xt_user_7f3a",
     "xtreamPass": "e2e_xt_pass_9c1d",
     "m3uUser": "e2e_m3u_user_4b8e",
@@ -22,6 +23,11 @@
     "revoked": { "tmdbId": 900004, "slug": "e2e-associacao-revogada", "title": "Big Buck Bunny (revogado)" },
     "blocked": { "tmdbId": 900005, "slug": "e2e-servidor-bloqueado", "title": "Big Buck Bunny (servidor bloqueado)" },
     "unverified": { "tmdbId": 900006, "slug": "e2e-nao-verificado", "title": "Big Buck Bunny (não verificado)" },
-    "peertube": { "tmdbId": 900007, "slug": "e2e-peertube-real", "title": "PeerTube (descoberto em runtime)" }
+    "peertube": { "tmdbId": 900007, "slug": "e2e-peertube-real", "title": "PeerTube (descoberto em runtime)" },
+    "embedMock": { "tmdbId": 900008, "slug": "e2e-embed-filme", "title": "Big Buck Bunny (player embed TMDB)" },
+    "embedSeries": { "tmdbId": 900009, "slug": "e2e-embed-serie", "title": "Série de teste (player embed TMDB)" },
+    "embedBlocked": { "tmdbId": 900010, "slug": "e2e-embed-bloqueado", "title": "Big Buck Bunny (player proíbe iframe)" },
+    "embedArchive": { "tmdbId": 900011, "slug": "e2e-embed-archive", "title": "Big Buck Bunny (player do Internet Archive)" },
+    "embedOff": { "tmdbId": 900012, "slug": "e2e-embed-desligado", "title": "Big Buck Bunny (provedor desligado)" }
   }
 }

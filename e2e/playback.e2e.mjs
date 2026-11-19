@@ -1120,6 +1120,453 @@ async function scenarioReverify() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// EMBED providers (external player in a sandboxed iframe)
+// ---------------------------------------------------------------------------
+
+/** The frame whose URL is `url` (query included), waiting for it to attach. */
+async function waitForFrame(page, url, timeoutMs = 60_000) {
+  const wanted = new URL(url);
+  const matches = (frame) => {
+    try {
+      const current = new URL(frame.url());
+
+      return current.origin === wanted.origin && current.pathname === wanted.pathname;
+    } catch {
+      return false;
+    }
+  };
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const frame = page.frames().find(matches);
+
+    if (frame) {
+      return frame;
+    }
+
+    await sleep(500);
+  }
+
+  return null;
+}
+
+/**
+ * L4 inside an iframe: the <video> of the (cross-origin) player reaches
+ * readyState>=3 with picture and its currentTime advances. Playwright reads the
+ * frame through the browser, which a page script could not do cross-origin.
+ */
+async function proveFramePlayback(frame, row, shotName, page, { needsClick = false } = {}) {
+  // frame.locator pierces open shadow roots (the Internet Archive player keeps its
+  // <video> inside <play-av>) and runs the function through CDP, not eval().
+  const read = () =>
+    frame
+      .locator("video")
+      .first()
+      .evaluate(
+        (video) => ({
+          readyState: video.readyState,
+          width: video.videoWidth,
+          height: video.videoHeight,
+          currentTime: video.currentTime,
+          duration: Number.isFinite(video.duration) ? video.duration : null,
+          paused: video.paused,
+          error: video.error ? video.error.code : null,
+        }),
+        undefined,
+        { timeout: 1_500 },
+      );
+
+  // Polls with frame.evaluate (CDP), never waitForFunction/waitForSelector: those
+  // evaluate strings in the page and a third-party player's CSP may forbid eval.
+  const until = async (predicate, timeoutMs, what) => {
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+      const state = await read().catch(() => null);
+
+      if (state && predicate(state)) {
+        return state;
+      }
+
+      await sleep(500);
+    }
+
+    throw new Error(`tempo esgotado esperando ${what}`);
+  };
+
+  try {
+    if (needsClick) {
+      // Some players (Internet Archive) only build the <video> after a click on
+      // their poster's play button: click the centre of the iframe like a viewer.
+      await page.locator("iframe").first().scrollIntoViewIfNeeded();
+
+      const box = await page.locator("iframe").first().boundingBox();
+
+      if (!box) {
+        throw new Error("o iframe não tem área visível para clicar");
+      }
+
+      // The first click can land before the player's script is ready: like a
+      // viewer, click again (up to 4 times) until playback actually starts.
+      for (let attempt = 1; attempt <= 4; attempt += 1) {
+        await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+
+        const started = await until(
+          (state) => state.readyState >= 3 || state.currentTime > 0,
+          8_000,
+          "o play iniciar",
+        ).catch(() => null);
+
+        if (started) {
+          break;
+        }
+      }
+    }
+
+    await until(() => true, 45_000, "o elemento <video>");
+
+    const first = await until(
+      (state) => state.readyState >= 3 && state.width > 0,
+      90_000,
+      "readyState>=3 com imagem",
+    );
+    const start = first.currentTime;
+
+    await until((state) => state.currentTime >= start + 3, 60_000, "o currentTime avançar 3 s");
+
+    const state = await read();
+    const ok = state.readyState >= 3 && state.width > 0 && state.error === null;
+
+    row.levels.L4 = ok ? "pass" : "fail";
+    row.notes.push(
+      ok
+        ? `L4: vídeo dentro do iframe (${new URL(frame.url()).origin}), readyState>=3, ${state.width}x${state.height}, currentTime ${first.currentTime.toFixed(1)}->${state.currentTime.toFixed(1)} s, sem erro de mídia. (L3 não se aplica: o fluxo de mídia é do player externo; L5 não foi medido.)`
+        : `L4: ${JSON.stringify(state)}.`,
+    );
+    row.video = {
+      ...(row.video ?? { title: row.scenario, source: row.kind }),
+      durationSeconds: state.duration ?? undefined,
+      playedSeconds: state.currentTime,
+    };
+    await page.screenshot({ path: join(SHOTS, `${shotName}.png`) }).catch(() => undefined);
+
+    return ok;
+  } catch (error) {
+    row.levels.L4 = "fail";
+    row.notes.push(`L4: o vídeo do iframe não tocou (${errorText(error)}; estado ${JSON.stringify(await read().catch(() => null))}).`);
+    await page.screenshot({ path: join(SHOTS, `${shotName}-falha.png`) }).catch(() => undefined);
+
+    return false;
+  }
+}
+
+/** The single player iframe of a watch page, with the attributes the spec asks for. */
+async function readPlayerIframe(page) {
+  const iframes = page.locator("iframe");
+
+  await iframes.first().waitFor({ state: "attached", timeout: 60_000 });
+
+  return {
+    count: await iframes.count(),
+    src: await iframes.first().getAttribute("src"),
+    sandbox: await iframes.first().getAttribute("sandbox"),
+    allow: await iframes.first().getAttribute("allow"),
+    referrerPolicy: await iframes.first().getAttribute("referrerpolicy"),
+    allowFullscreen: (await iframes.first().getAttribute("allowfullscreen")) !== null,
+  };
+}
+
+/** Why the iframe is not the restrictive, framed player the spec asks for, or null. */
+function describeIframeProblem(iframe, expectedUrl) {
+  const sandbox = (iframe.sandbox ?? "").split(/\s+/);
+
+  if (iframe.count !== 1) return `há ${iframe.count} iframes (esperado 1).`;
+  if (iframe.src !== expectedUrl) return `src do iframe (${iframe.src}) difere da fonte da API (${expectedUrl}).`;
+  if (!sandbox.includes("allow-scripts")) return "o iframe não tem sandbox com allow-scripts.";
+  if (sandbox.some((token) => ["allow-top-navigation", "allow-popups", "allow-modals"].includes(token))) {
+    return `sandbox permite navegar/abrir janelas (${iframe.sandbox}).`;
+  }
+  if (!iframe.allow?.includes("fullscreen") || !iframe.allowFullscreen) return "o iframe não libera tela cheia.";
+  if (iframe.referrerPolicy !== "strict-origin-when-cross-origin") return `referrerPolicy inesperado (${iframe.referrerPolicy}).`;
+
+  return null;
+}
+
+async function scenarioEmbedMovie(page) {
+  const title = seed.titles.embedMock;
+  const row = addRow({
+    key: "embed-movie-tmdb",
+    scenario: "EMBED por TMDB ID — filme (player externo HTTPS)",
+    kind: "Embed TMDB movie",
+  });
+
+  row.video = { title: title.title, source: "embed-mock /embed/movie/{tmdbId}" };
+
+  // TMDB id -> association -> embed adapter -> iframe URL.
+  const { status, sources, text } = await fetchSources(context, title.tmdbId);
+  const source = sources[0];
+  const expected = `https://${cfg.mock.host}:${cfg.mock.embedPort}/embed/movie/${title.tmdbId}`;
+  const l1 =
+    status === 200 &&
+    source?.provider === "embed-mock" &&
+    source.type === "iframe" &&
+    source.url === expected &&
+    source.sandbox === true &&
+    !containsSecret(text);
+
+  row.levels.L1 = l1 ? "pass" : "fail";
+  row.notes.push(
+    l1
+      ? `L1: TMDB ${title.tmdbId} -> associação VERIFIED -> adapter embed -> ${source.url}.`
+      : `L1: HTTP ${status}, fonte=${JSON.stringify(source)?.slice(0, 220)} (esperado ${expected}).`,
+  );
+
+  // A built URL is never "confirmed": the live check may reach UNKNOWN at best.
+  const availability = await checkAvailability(context, title.tmdbId, true);
+
+  row.notes.push(
+    `Disponibilidade ao vivo: estado ${availability.json?.state}, checkedLive=${availability.json?.checkedLive} (URL montada nunca é CONFIRMED).`,
+  );
+
+  if (availability.json?.state === "CONFIRMED" || availability.json?.state === "UNAVAILABLE") {
+    row.levels.L2 = "fail";
+    row.notes.push("L2: a checagem da URL montada devia resultar em UNKNOWN.");
+  } else {
+    row.levels.L2 = "pass";
+    row.notes.push("L2: o endereço do player respondeu 2xx e permite iframe (checado no servidor).");
+  }
+
+  if (!l1) {
+    return;
+  }
+
+  const response = await page.goto(`/watch/${title.slug}`, { waitUntil: "domcontentloaded" });
+  const csp = response?.headers()["content-security-policy"] ?? "";
+  const frameSrc = /frame-src ([^;]*)/.exec(csp)?.[1] ?? "";
+  const cspOk =
+    csp.includes("frame-ancestors 'none'") &&
+    frameSrc.includes(`https://${cfg.mock.host}:${cfg.mock.embedPort}`) &&
+    !frameSrc.includes("*");
+
+  row.notes.push(cspOk ? `CSP: frame-src restrito (${frameSrc.trim()}).` : `CSP inesperada: ${csp.slice(0, 200)}.`);
+
+  const iframe = await readPlayerIframe(page);
+  const problem = describeIframeProblem(iframe, source.url);
+
+  row.notes.push(problem ? `iframe: ${problem}` : "iframe: único, sandbox restrito, tela cheia liberada, referrer só de origem.");
+
+  const frame = await waitForFrame(page, source.url);
+
+  if (!frame) {
+    row.levels.L4 = "fail";
+    row.notes.push("L4: o iframe não carregou o player.");
+    return;
+  }
+
+  const attrs = await frame.evaluate(() => ({
+    kind: document.body.dataset.kind,
+    tmdb: document.body.dataset.tmdb,
+  }));
+  const rightTitle = attrs.kind === "movie" && attrs.tmdb === String(title.tmdbId);
+
+  row.notes.push(`O player recebeu o título certo (kind=${attrs.kind}, tmdb=${attrs.tmdb}): ${rightTitle}.`);
+
+  const played = await proveFramePlayback(frame, row, "embed-movie", page);
+
+  if (!played || !rightTitle || !cspOk || problem) {
+    row.levels.L4 = "fail";
+  }
+}
+
+async function scenarioEmbedEpisodes(page) {
+  const title = seed.titles.embedSeries;
+  const row = addRow({
+    key: "embed-episode-tmdb",
+    scenario: "EMBED por TMDB ID — série, temporada e episódio (troca de episódio)",
+    kind: "Embed TMDB episode",
+  });
+
+  row.video = { title: title.title, source: "embed-mock /embed/tv/{tmdbId}/{season}/{episode}" };
+
+  const sourcesByEpisode = [];
+
+  for (const episode of [1, 2]) {
+    const response = await context.request.get(`/api/playback/tv/${title.tmdbId}/1/${episode}`);
+    const json = await response.json().catch(() => null);
+
+    sourcesByEpisode.push(json?.sources?.[0]);
+  }
+
+  const expected = (episode) => `https://${cfg.mock.host}:${cfg.mock.embedPort}/embed/tv/${title.tmdbId}/1/${episode}`;
+  const l1 = sourcesByEpisode.every(
+    (source, index) => source?.provider === "embed-mock" && source.type === "iframe" && source.url === expected(index + 1),
+  );
+
+  row.levels.L1 = l1 ? "pass" : "fail";
+  row.notes.push(
+    l1
+      ? `L1: série ${title.tmdbId} T1E1 -> ${sourcesByEpisode[0].url}; T1E2 -> ${sourcesByEpisode[1].url}.`
+      : `L1: ${JSON.stringify(sourcesByEpisode).slice(0, 300)}.`,
+  );
+
+  if (!l1) {
+    return;
+  }
+
+  await page.goto(`/watch/series/${title.slug}?e=${title.episodeIds[0]}`, { waitUntil: "domcontentloaded" });
+
+  const first = await readPlayerIframe(page);
+  const firstProblem = describeIframeProblem(first, expected(1));
+  const frame1 = await waitForFrame(page, expected(1));
+
+  row.notes.push(firstProblem ? `E1 iframe: ${firstProblem}` : "E1 iframe: único e restrito.");
+
+  if (!frame1) {
+    row.levels.L4 = "fail";
+    row.notes.push("L4: o iframe do episódio 1 não carregou.");
+    return;
+  }
+
+  const attrs1 = await frame1.evaluate(() => ({ ...document.body.dataset }));
+  const played1 = await proveFramePlayback(frame1, row, "embed-episodio-1", page);
+
+  // Switch episode through the UI: the old iframe must go away, the new URL load.
+  const link = page.locator(`a[href*="?e=${title.episodeIds[1]}"]`).first();
+
+  if ((await link.count()) > 0) {
+    await link.click();
+  } else {
+    await page.goto(`/watch/series/${title.slug}?e=${title.episodeIds[1]}`, { waitUntil: "domcontentloaded" });
+  }
+
+  await page.waitForFunction(
+    (url) => document.querySelector("iframe")?.getAttribute("src") === url,
+    expected(2),
+    { timeout: 60_000 },
+  );
+
+  const second = await readPlayerIframe(page);
+  const secondProblem = describeIframeProblem(second, expected(2));
+  const frame2 = await waitForFrame(page, expected(2));
+  const oldFramesLeft = page.frames().filter((frame) => frame.url() === expected(1)).length;
+
+  row.notes.push(
+    secondProblem ? `E2 iframe: ${secondProblem}` : `E2 iframe: único e restrito; iframes do episódio 1 restantes: ${oldFramesLeft}.`,
+  );
+
+  const attrs2 = frame2 ? await frame2.evaluate(() => ({ ...document.body.dataset })) : null;
+  const rightEpisodes =
+    attrs1.kind === "tv" &&
+    attrs1.season === "1" &&
+    attrs1.episode === "1" &&
+    attrs2?.kind === "tv" &&
+    attrs2.tmdb === String(title.tmdbId) &&
+    attrs2.season === "1" &&
+    attrs2.episode === "2";
+
+  row.notes.push(`O player recebeu série+temporada+episódio certos (E1 ${JSON.stringify(attrs1)}, E2 ${JSON.stringify(attrs2)}): ${rightEpisodes}.`);
+
+  const played2 = frame2 ? await proveFramePlayback(frame2, row, "embed-episodio-2", page) : false;
+
+  if (!played1 || !played2 || !rightEpisodes || firstProblem || secondProblem || oldFramesLeft !== 0) {
+    row.levels.L4 = "fail";
+  }
+}
+
+async function scenarioEmbedArchive(page) {
+  const title = seed.titles.embedArchive;
+  const row = addRow({
+    key: "embed-archive-real",
+    scenario: "EMBED real e autorizado — player oficial do Internet Archive (CC BY)",
+    kind: "Embed Internet Archive",
+  });
+
+  row.video = { title: "Big Buck Bunny", source: "archive.org/embed/BigBuckBunny_124" };
+
+  const { status, sources, text } = await fetchSources(context, title.tmdbId);
+  const source = sources[0];
+  const expected = "https://archive.org/embed/BigBuckBunny_124";
+  const l1 =
+    status === 200 &&
+    source?.provider === "embed-archive" &&
+    source.type === "iframe" &&
+    source.url === expected &&
+    !containsSecret(text);
+
+  row.levels.L1 = l1 ? "pass" : "fail";
+  row.notes.push(
+    l1
+      ? `L1: TMDB ${title.tmdbId} -> associação VERIFIED (CC BY 3.0) -> adapter embed -> ${source.url}.`
+      : `L1: HTTP ${status}, fonte=${JSON.stringify(source)?.slice(0, 220)}.`,
+  );
+
+  const availability = await checkAvailability(context, title.tmdbId, true);
+
+  row.notes.push(`Disponibilidade ao vivo: estado ${availability.json?.state} (página real do archive.org consultada pelo servidor).`);
+  row.levels.L2 = availability.json?.state === "UNKNOWN" ? "pass" : "fail";
+  row.notes.push(
+    row.levels.L2 === "pass"
+      ? "L2: archive.org respondeu e permite iframe; fica UNKNOWN porque a URL é montada, não confirmada."
+      : "L2: esperado UNKNOWN após checar o player real.",
+  );
+
+  if (!l1) {
+    return;
+  }
+
+  await page.goto(`/watch/${title.slug}`, { waitUntil: "domcontentloaded" });
+
+  const iframe = await readPlayerIframe(page);
+  const problem = describeIframeProblem(iframe, source.url);
+
+  row.notes.push(problem ? `iframe: ${problem}` : "iframe: único, sandbox restrito, tela cheia liberada.");
+
+  const frame = await waitForFrame(page, source.url);
+
+  if (!frame) {
+    row.levels.L4 = "fail";
+    row.notes.push("L4: o iframe do archive.org não carregou.");
+    return;
+  }
+
+  const played = await proveFramePlayback(frame, row, "embed-archive", page, { needsClick: true });
+
+  if (!played || problem) {
+    row.levels.L4 = "fail";
+  }
+}
+
+async function scenarioEmbedRefused(page, titleKey, key, scenario, { expectCheck }) {
+  const title = seed.titles[titleKey];
+  const row = addRow({ key, scenario, kind: "Sem fonte reproduzível" });
+
+  const before = await fetchSources(context, title.tmdbId);
+
+  if (expectCheck) {
+    // The live check sees the provider forbid framing and marks it UNAVAILABLE.
+    const availability = await checkAvailability(context, title.tmdbId, true);
+
+    row.notes.push(`Checagem ao vivo: estado ${availability.json?.state} (esperado UNAVAILABLE).`);
+    row.expectedState = "UNAVAILABLE";
+    row.stateOk = availability.json?.state === "UNAVAILABLE";
+  } else {
+    row.stateOk = true;
+  }
+
+  const after = await fetchSources(context, title.tmdbId);
+  const screen = await expectUnavailableScreen(page, title.slug);
+  const iframes = await page.locator("iframe").count();
+
+  row.notes.push(
+    `Fontes na API antes/depois: ${before.sources.length}/${after.sources.length}; tela "INDISPONÍVEL PARA REPRODUÇÃO": ${screen}; iframes na página: ${iframes}.`,
+  );
+
+  const ok = row.stateOk && after.sources.length === 0 && screen && iframes === 0;
+
+  row.check = ok ? "pass" : "fail";
+}
+
 async function main() {
   await db.connect();
   browser = await chromium.launch({
@@ -1131,6 +1578,8 @@ async function main() {
     baseURL: BASE_URL,
     viewport: { width: 1280, height: 720 },
     locale: "pt-BR",
+    // The EMBED mock serves a throw-away self-signed certificate (make-tls.mjs).
+    ignoreHTTPSErrors: true,
   });
   await context.tracing.start({ screenshots: true, snapshots: true });
 
@@ -1210,6 +1659,31 @@ async function main() {
         }),
     ],
     ["peertube", () => scenarioPeerTube(page)],
+    ["embed-movie", () => scenarioEmbedMovie(page)],
+    ["embed-episodes", () => scenarioEmbedEpisodes(page)],
+    ["embed-archive", () => scenarioEmbedArchive(page)],
+    [
+      "embed-blocked",
+      () =>
+        scenarioEmbedRefused(
+          page,
+          "embedBlocked",
+          "embed-framing-blocked",
+          "EMBED: provedor que proíbe iframe (X-Frame-Options) é recusado",
+          { expectCheck: true },
+        ),
+    ],
+    [
+      "embed-off",
+      () =>
+        scenarioEmbedRefused(
+          page,
+          "embedOff",
+          "embed-disabled",
+          "EMBED: provedor desabilitado na configuração não é oferecido",
+          { expectCheck: false },
+        ),
+    ],
     [
       "none",
       () =>

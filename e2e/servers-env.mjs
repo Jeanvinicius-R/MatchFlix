@@ -44,6 +44,53 @@ const servers = [
     id: "blocked-mock",
     label: "Servidor sem allowPrivateNetwork (mock E2E)",
   },
+  // EMBED providers (external player in an iframe). The first two are the HTTPS
+  // mock (TMDB-id URLs; its certificate is trusted via NODE_EXTRA_CA_CERTS).
+  {
+    id: "embed-mock",
+    label: "Player Externo (mock HTTPS E2E)",
+    kind: "embed",
+    baseUrl: `https://${mock.host}:${mock.embedPort}`,
+    identifierType: "tmdb",
+    movieTemplate: "/embed/movie/{tmdbId}",
+    episodeTemplate: "/embed/tv/{tmdbId}/{season}/{episode}",
+    licenseReference,
+    allowPrivateNetwork: true,
+  },
+  // Same host, but a path whose answer forbids framing (X-Frame-Options: DENY).
+  {
+    id: "embed-negado",
+    label: "Player que proíbe iframe (mock HTTPS E2E)",
+    kind: "embed",
+    baseUrl: `https://${mock.host}:${mock.embedPort}`,
+    identifierType: "tmdb",
+    movieTemplate: "/negado/{tmdbId}",
+    licenseReference,
+    allowPrivateNetwork: true,
+  },
+  // Switched off in the configuration: nothing may be offered.
+  {
+    id: "embed-desligado",
+    label: "Player desligado (mock HTTPS E2E)",
+    kind: "embed",
+    enabled: false,
+    baseUrl: `https://${mock.host}:${mock.embedPort}`,
+    identifierType: "tmdb",
+    movieTemplate: "/embed/movie/{tmdbId}",
+    licenseReference,
+    allowPrivateNetwork: true,
+  },
+  // REAL and authorized: the Internet Archive's own embeddable player for the
+  // Blender Foundation's CC BY film. The id is the Archive item identifier.
+  {
+    id: "embed-archive",
+    label: "Internet Archive (player oficial)",
+    kind: "embed",
+    baseUrl: "https://archive.org",
+    identifierType: "asset",
+    movieTemplate: "/embed/{id}",
+    licenseReference: "Big Buck Bunny — CC BY 3.0, Blender Foundation (item BigBuckBunny_124 do Internet Archive)",
+  },
 ];
 
 const json = JSON.stringify(servers);

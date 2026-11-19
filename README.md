@@ -232,6 +232,38 @@ Usa **somente** a YouTube Data API v3 oficial (`search.list` + `videos.list`) e 
 
 Outras limitações: cota diária da API (cada busca gasta um `search.list` caro; respostas em cache por 24 h); casamento por nome/duração é heurístico; depende de `TMDB_ACCESS_TOKEN` para saber o que buscar.
 
+### Provedores por associação (Fase 2) e provedores EMBED
+
+Além dos providers acima, cada **adaptador** registrado (`src/services/playback/adapters/registry.ts`) vira um provider que só toca o que um admin associou a um título (`PlaybackAssociation`) **e** marcou como `VERIFIED` com a referência da licença. Adaptadores: `archive` (Internet Archive), `peertube` (`PEERTUBE_ALLOWED_INSTANCES`) e os servidores próprios/licenciados de `PLAYBACK_SERVERS` (`xtream`, `m3u`, `files`, `rest` e `embed`). TMDB é só o catálogo; a descoberta (`/admin/playback/candidates`) só gera **sugestões**. Disponibilidade é separada dos direitos: `Confirmada`, `Desconhecida`, `Indisponível` ou sem associação, com reverificação periódica (`POST /api/internal/reverify`, hoje só manual).
+
+**EMBED = player externo num iframe.** O adaptador `embed` monta a URL do player a partir do ID do TMDB (ou do IMDb, ou de um ID do próprio provedor) e dos números de temporada/episódio. Configuração, só no backend, em `PLAYBACK_SERVERS`:
+
+```json
+{
+  "id": "player-externo",
+  "label": "Player Externo",
+  "kind": "embed",
+  "baseUrl": "https://dominio-autorizado.exemplo",
+  "identifierType": "tmdb",
+  "movieTemplate": "/embed/movie/{tmdbId}",
+  "episodeTemplate": "/embed/tv/{tmdbId}/{season}/{episode}",
+  "licenseReference": "Contrato 123/2026 com o provedor X",
+  "enabled": true,
+  "sandbox": true
+}
+```
+
+- `identifierType`: `tmdb`, `imdb` (o ID vem do endpoint `external_ids` do TMDB, nunca do nome do filme; sem IMDb ID o provedor é recusado para aquele título) ou `asset` (ID do próprio provedor, ex.: `BigBuckBunny_124`). Os templates aceitam caminho **ou** query (`/embed?video_id={id}&tmdb=1`) com os marcadores `{id}`, `{tmdbId}`, `{imdbId}`, `{season}` e `{episode}`.
+- Só `https`, `baseUrl` é apenas a origem; templates não podem trocar o host, subir diretórios nem conter `@`/`#`. IDs são validados campo a campo antes de formar a URL, e a URL final precisa ficar na origem configurada.
+- `licenseReference` é obrigatório. Isto **não libera nenhum título**: o admin associa em `/admin/playback` (no campo do ID digite `auto` para derivar o ID do TMDB/IMDb) e marca `VERIFIED`. `enabled: false` desliga o provedor sem apagar associações.
+- O iframe usa `sandbox="allow-scripts allow-same-origin allow-presentation allow-forms"` (sem popups nem navegação do topo), `allow="autoplay; fullscreen; encrypted-media; picture-in-picture"` e `referrerPolicy="strict-origin-when-cross-origin"`. O `src/proxy.ts` aplica `Content-Security-Policy: frame-ancestors 'none'; frame-src …` **em tempo de execução**, só com as origens configuradas (YouTube, Internet Archive, `PLAYBACK_AUTHORIZED_BASE_URL` e provedores embed habilitados).
+- **URL montada ≠ vídeo confirmado.** A checagem do admin pede a página ao servidor e recusa 404/5xx, redirecionamento para fora do domínio e `X-Frame-Options`/`frame-ancestors` que proíbam o MatchFlix, mas, se passar, o estado fica **Desconhecida**, nunca Confirmada: só o navegador prova que toca. O progresso de um iframe de terceiros **não é salvo** (não há eventos oficiais validados) e não há `postMessage` aceito.
+- Trocar de episódio recarrega o iframe com a URL do novo episódio (um único iframe por vez).
+
+**Provedores citados no pedido (VidSrc, SuperEmbed/MultiEmbed, WarezCDN) não foram configurados.** O MatchFlix não tem como comprovar contrato nem licença do operador com eles, e a regra do projeto é que nenhuma fonte entra sem `licenseReference` verificável; a declaração de autorização sozinha não cobre os títulos. O adaptador é genérico: se o operador comprovar a autorização de um deles, basta um item em `PLAYBACK_SERVERS`, sem alterar código. A prova ponta a ponta usa embeds reais e licenciados (o player oficial do Internet Archive, CC BY) e um provedor HTTPS próprio de teste (`e2e/mock-embed-server.mjs`, que serve o Big Buck Bunny CC BY nos formatos `/embed/movie/{id}` e `/embed/tv/{id}/{s}/{e}`).
+
+Testes: `npm test` (adaptador, configuração, política de frames, associação), e o job `e2e-chrome` do workflow `playback-live.yml` toca os iframes no Google Chrome. Para rodar o e2e local: subir os mocks, `node e2e/make-tls.mjs` (certificado descartável; `OPENSSL_BIN` aponta para um `openssl`), iniciar o Next com `NODE_EXTRA_CA_CERTS=e2e-out/tls/cert.pem` e `node e2e/playback.e2e.mjs`.
+
 ## Histórico, progresso e Minha lista
 
 | Recurso              | Estado                                                                                                                 |

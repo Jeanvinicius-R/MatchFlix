@@ -202,6 +202,21 @@ jobs:
           cat e2e-out/mock-server.log
           exit 1
 
+      - name: Iniciar o provedor EMBED mock (HTTPS, certificado descartável)
+        run: |
+          node e2e/make-tls.mjs
+          nohup node e2e/mock-embed-server.mjs > e2e-out/mock-embed.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -fsSk -o /dev/null https://127.0.0.1:8443/embed/movie/900008; then
+              echo "Provedor embed mock pronto"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::o provedor embed mock não subiu"
+          cat e2e-out/mock-embed.log
+          exit 1
+
       - name: Checagens dos adaptadores (SSRF e allowPrivateNetwork)
         run: |
           eval "$(node e2e/servers-env.mjs --shell)"
@@ -216,6 +231,8 @@ jobs:
         run: |
           eval "$(node e2e/servers-env.mjs --shell)"
           export PEERTUBE_ALLOWED_INSTANCES="$(cat e2e-out/peertube-hosts.txt)"
+          # O Next confia só no certificado descartável do mock embed (nada no sistema).
+          export NODE_EXTRA_CA_CERTS="$GITHUB_WORKSPACE/e2e-out/tls/cert.pem"
           cd .next/standalone
           nohup node server.js > "$GITHUB_WORKSPACE/e2e-out/next-server.log" 2>&1 &
           cd "$GITHUB_WORKSPACE"
@@ -256,6 +273,7 @@ jobs:
             e2e-out/console.log
             e2e-out/next-server.log
             e2e-out/mock-server.log
+            e2e-out/mock-embed.log
           if-no-files-found: warn
 
   final-report:

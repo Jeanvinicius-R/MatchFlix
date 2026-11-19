@@ -61,6 +61,13 @@ export function maxProvenLevel(row) {
   let reached = "nenhum";
 
   for (const [name, state] of order) {
+    // "na" = the level does not apply to this scenario (e.g. L3, the ffmpeg
+    // decode, cannot reach the media inside a third-party iframe): it neither
+    // proves nor breaks the chain. "fail"/"skip" still stop it.
+    if (state === "na") {
+      continue;
+    }
+
     if (state !== "pass") {
       break;
     }

@@ -47,7 +47,7 @@ const LICENSE = config.licenseReference;
 const { mock, titles } = config;
 
 type RightsSeed = "VERIFIED" | "UNVERIFIED";
-type FormatSeed = "MP4" | "HLS";
+type FormatSeed = "MP4" | "HLS" | "EMBED";
 
 interface TitleEntry {
   tmdbId: number;
@@ -82,6 +82,47 @@ async function upsertMovie(entry: TitleEntry, durationInMinutes: number) {
   });
 }
 
+/** A local series with one season and `episodes` episodes (so no TMDB token is needed). */
+async function upsertSeries(entry: TitleEntry, episodes: number) {
+  const series = await prisma.series.upsert({
+    where: { slug: entry.slug },
+    update: { tmdbId: entry.tmdbId, title: entry.title, isActive: true },
+    create: {
+      slug: entry.slug,
+      tmdbId: entry.tmdbId,
+      title: entry.title,
+      originalTitle: entry.title,
+      synopsis: "Série de teste do E2E do MatchFlix (player embed por TMDB).",
+      releaseYear: 2008,
+      ageRating: "TWELVE",
+    },
+  });
+
+  // Fresh seasons/episodes on every run (episodes cascade with their season).
+  await prisma.season.deleteMany({ where: { seriesId: series.id } });
+
+  const season = await prisma.season.create({
+    data: { seriesId: series.id, seasonNumber: 1, title: "Temporada 1" },
+  });
+  const created: { id: string; episodeNumber: number }[] = [];
+
+  for (let number = 1; number <= episodes; number += 1) {
+    const episode = await prisma.episode.create({
+      data: {
+        seasonId: season.id,
+        episodeNumber: number,
+        title: `Episódio ${number}`,
+        durationInMinutes: 10,
+      },
+      select: { id: true, episodeNumber: true },
+    });
+
+    created.push(episode);
+  }
+
+  return { series, episodes: created };
+}
+
 async function createAssociation(options: {
   tmdbId: number;
   provider: string;
@@ -89,13 +130,16 @@ async function createAssociation(options: {
   playbackType: FormatSeed;
   rightsStatus: RightsSeed;
   licenseReference?: string;
+  mediaType?: "MOVIE" | "EPISODE";
+  seasonNumber?: number;
+  episodeNumber?: number;
 }) {
   return prisma.playbackAssociation.create({
     data: {
       tmdbId: options.tmdbId,
-      mediaType: "MOVIE",
-      seasonNumber: 0,
-      episodeNumber: 0,
+      mediaType: options.mediaType ?? "MOVIE",
+      seasonNumber: options.seasonNumber ?? 0,
+      episodeNumber: options.episodeNumber ?? 0,
       provider: options.provider,
       providerAssetId: options.providerAssetId,
       playbackType: options.playbackType,
@@ -136,7 +180,12 @@ async function main() {
     revoked: await upsertMovie(titles.revoked, 10),
     blocked: await upsertMovie(titles.blocked, 10),
     unverified: await upsertMovie(titles.unverified, 10),
+    embedMock: await upsertMovie(titles.embedMock, 10),
+    embedBlocked: await upsertMovie(titles.embedBlocked, 10),
+    embedArchive: await upsertMovie(titles.embedArchive, 10),
+    embedOff: await upsertMovie(titles.embedOff, 10),
   };
+  const embedSeries = await upsertSeries(titles.embedSeries, 2);
 
   const m3uAssetId = hashEntryUrl(m3uEntryUrl());
   const associations = {
@@ -187,6 +236,59 @@ async function main() {
       providerAssetId: "BigBuckBunny_124",
       playbackType: "MP4",
       rightsStatus: "UNVERIFIED",
+    }),
+    // EMBED: the iframe URL is built from the TMDB id (movie) ...
+    embedMock: await createAssociation({
+      tmdbId: titles.embedMock.tmdbId,
+      provider: "embed-mock",
+      providerAssetId: String(titles.embedMock.tmdbId),
+      playbackType: "EMBED",
+      rightsStatus: "VERIFIED",
+    }),
+    // ... and from series + season + episode (two episodes, to test switching).
+    embedEpisode1: await createAssociation({
+      tmdbId: titles.embedSeries.tmdbId,
+      provider: "embed-mock",
+      providerAssetId: `${titles.embedSeries.tmdbId}/1/1`,
+      playbackType: "EMBED",
+      rightsStatus: "VERIFIED",
+      mediaType: "EPISODE",
+      seasonNumber: 1,
+      episodeNumber: 1,
+    }),
+    embedEpisode2: await createAssociation({
+      tmdbId: titles.embedSeries.tmdbId,
+      provider: "embed-mock",
+      providerAssetId: `${titles.embedSeries.tmdbId}/1/2`,
+      playbackType: "EMBED",
+      rightsStatus: "VERIFIED",
+      mediaType: "EPISODE",
+      seasonNumber: 1,
+      episodeNumber: 2,
+    }),
+    // A provider that forbids framing (X-Frame-Options): the check must refuse it.
+    embedBlocked: await createAssociation({
+      tmdbId: titles.embedBlocked.tmdbId,
+      provider: "embed-negado",
+      providerAssetId: String(titles.embedBlocked.tmdbId),
+      playbackType: "EMBED",
+      rightsStatus: "VERIFIED",
+    }),
+    // REAL and authorized: the Internet Archive's official player.
+    embedArchive: await createAssociation({
+      tmdbId: titles.embedArchive.tmdbId,
+      provider: "embed-archive",
+      providerAssetId: "BigBuckBunny_124",
+      playbackType: "EMBED",
+      rightsStatus: "VERIFIED",
+    }),
+    // Provider switched off in PLAYBACK_SERVERS ("enabled": false).
+    embedOff: await createAssociation({
+      tmdbId: titles.embedOff.tmdbId,
+      provider: "embed-desligado",
+      providerAssetId: String(titles.embedOff.tmdbId),
+      playbackType: "EMBED",
+      rightsStatus: "VERIFIED",
     }),
   };
 
@@ -253,6 +355,32 @@ async function main() {
         ...titles.unverified,
         movieId: movies.unverified.id,
         associationId: associations.unverified.id,
+      },
+      embedMock: {
+        ...titles.embedMock,
+        movieId: movies.embedMock.id,
+        associationId: associations.embedMock.id,
+      },
+      embedSeries: {
+        ...titles.embedSeries,
+        seriesId: embedSeries.series.id,
+        episodeIds: embedSeries.episodes.map((episode) => episode.id),
+        associationIds: [associations.embedEpisode1.id, associations.embedEpisode2.id],
+      },
+      embedBlocked: {
+        ...titles.embedBlocked,
+        movieId: movies.embedBlocked.id,
+        associationId: associations.embedBlocked.id,
+      },
+      embedArchive: {
+        ...titles.embedArchive,
+        movieId: movies.embedArchive.id,
+        associationId: associations.embedArchive.id,
+      },
+      embedOff: {
+        ...titles.embedOff,
+        movieId: movies.embedOff.id,
+        associationId: associations.embedOff.id,
       },
     },
     peertube,
