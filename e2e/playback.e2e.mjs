@@ -142,12 +142,96 @@ async function ffprobeDuration(url) {
  * WHOLE media (L5-b). Any ffmpeg error output counts as a failure.
  * `headers` is a raw "-headers" value (the session cookie, to go through the proxy).
  */
+/**
+ * ffmpeg's HLS demuxer reads only the FIRST segment of a playlist made of one
+ * fragmented MP4 with #EXT-X-MAP + #EXT-X-BYTERANGE (PeerTube's format) and still
+ * exits successfully, so a "full decode" stops after ~6 s. Every segment of such a
+ * playlist is a contiguous byte range of ONE file, so that file is the whole video:
+ * decode it directly. Null when the playlist has another shape (or is not public).
+ */
+async function singleFmp4OfHls(url) {
+  if (!/\.m3u8(?:[?#]|$)/i.test(url)) {
+    return null;
+  }
+
+  const fetchText = async (target) => {
+    try {
+      const response = await fetch(target, { headers: { "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(30_000) });
+
+      return response.ok ? await response.text() : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const master = await fetchText(url);
+
+  if (master === null) {
+    return null;
+  }
+
+  let mediaUrl = url;
+  let media = master;
+
+  if (master.includes("#EXT-X-STREAM-INF")) {
+    // Lowest bandwidth: the same video, the smallest download.
+    const lines = master.split(/\r?\n/);
+    let best = null;
+
+    for (let index = 0; index < lines.length - 1; index += 1) {
+      const match = /^#EXT-X-STREAM-INF:.*?\bBANDWIDTH=(\d+)/.exec(lines[index]);
+      const uri = lines[index + 1]?.trim();
+
+      if (match && uri && !uri.startsWith("#") && (best === null || Number(match[1]) < best.bandwidth)) {
+        best = { bandwidth: Number(match[1]), uri };
+      }
+    }
+
+    if (!best) {
+      return null;
+    }
+
+    mediaUrl = new URL(best.uri, url).toString();
+    media = await fetchText(mediaUrl);
+
+    if (media === null) {
+      return null;
+    }
+  }
+
+  if (!media.includes("#EXT-X-MAP") || !media.includes("#EXT-X-BYTERANGE")) {
+    return null;
+  }
+
+  const files = new Set(media.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== "" && !line.startsWith("#")));
+  const mapUri = /#EXT-X-MAP:.*?URI="([^"]+)"/.exec(media)?.[1];
+
+  return files.size === 1 && mapUri && files.has(mapUri) ? new URL(mapUri, mediaUrl).toString() : null;
+}
+
+const FLATTENED_NOTE =
+  "decodificado a partir do arquivo fMP4 único da variante HLS (o demuxer HLS do ffmpeg só lê o 1º segmento deste formato; os segmentos são faixas contíguas desse arquivo)";
+
 async function ffmpegDecode(url, { limitSeconds, minSeconds, timeoutMs, headers, hls = false }) {
   const args = ["-v", "error", "-nostdin", "-nostats", "-progress", "pipe:1", "-user_agent", USER_AGENT];
 
   if (hls) {
-    // The proxy URLs of the segments have no file extension.
-    args.push("-allowed_extensions", "ALL", "-protocol_whitelist", "file,http,https,tcp,tls,crypto");
+    // The proxy URLs of the segments have no file extension (ffmpeg >= 5.1 refuses them unless told otherwise).
+    args.push(
+      "-allowed_extensions",
+      "ALL",
+      "-extension_picky",
+      "0",
+      "-protocol_whitelist",
+      "file,http,https,tcp,tls,crypto",
+    );
+  }
+
+  const flattened = headers ? null : await singleFmp4OfHls(url);
+  const note = flattened ? FLATTENED_NOTE : undefined;
+
+  if (flattened) {
+    url = flattened;
   }
 
   if (headers) {
@@ -170,22 +254,22 @@ async function ffmpegDecode(url, { limitSeconds, minSeconds, timeoutMs, headers,
   });
 
   if (result.spawnError) {
-    return { ok: false, decoded, reason: `ffmpeg indisponível (${result.spawnError})` };
+    return { ok: false, decoded, note, reason: `ffmpeg indisponível (${result.spawnError})` };
   }
 
   if (result.timedOut) {
-    return { ok: false, decoded, reason: "ffmpeg excedeu o tempo limite" };
+    return { ok: false, decoded, note, reason: "ffmpeg excedeu o tempo limite" };
   }
 
   if (result.code !== 0 || result.stderr.trim() !== "") {
-    return { ok: false, decoded, reason: `ffmpeg: ${result.stderr.trim().slice(0, 250) || `código ${result.code}`}` };
+    return { ok: false, decoded, note, reason: `ffmpeg: ${result.stderr.trim().slice(0, 250) || `código ${result.code}`}` };
   }
 
   if (decoded < minSeconds) {
-    return { ok: false, decoded, reason: `decodificou só ${decoded.toFixed(1)} s (mínimo ${minSeconds.toFixed(1)} s)` };
+    return { ok: false, decoded, note, reason: `decodificou só ${decoded.toFixed(1)} s (mínimo ${minSeconds.toFixed(1)} s)` };
   }
 
-  return { ok: true, decoded };
+  return { ok: true, decoded, note };
 }
 
 // ---------------------------------------------------------------------------
@@ -799,6 +883,9 @@ async function scenarioPeerTube(page) {
 
   row.levels.L3 = decode.ok ? "pass" : "fail";
   row.notes.push(decode.ok ? `L3: ffmpeg decodificou ${decode.decoded.toFixed(1)} s.` : `L3: ${decode.reason}.`);
+  if (decode.note) {
+    row.notes.push(`L3: ${decode.note}.`);
+  }
 
   // L5-a / L5-b on this very video (short enough for the CI).
   const probed = await ffprobeDuration(source.url);
@@ -814,6 +901,9 @@ async function scenarioPeerTube(page) {
 
     row.l5.b = full.ok ? "pass" : "fail";
     row.notes.push(full.ok ? `L5-b: decodificação completa ${full.decoded.toFixed(1)} s sem erros.` : `L5-b: ${full.reason}.`);
+    if (full.note) {
+      row.notes.push(`L5-b: ${full.note}.`);
+    }
   } else {
     row.l5.b = "fail";
   }

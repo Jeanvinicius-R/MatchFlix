@@ -117,6 +117,10 @@ async function proveDecoding(
     row.notes.push(`L3: ${sample.reason ?? "falhou"}`);
   }
 
+  if (sample.note) {
+    row.notes.push(`L3: ${sample.note}.`);
+  }
+
   // L5-b: decode EVERYTHING; the final decoded time must reach duration - 2 s.
   if (!allowFullDecode) {
     row.l5.b = "skip";
@@ -144,6 +148,10 @@ async function proveDecoding(
       ? `L5-b: decodificou ${full.decodedSeconds.toFixed(1)} s de ${info.durationSeconds.toFixed(1)} s sem erros.`
       : `L5-b: ${full.reason ?? "falhou"}`,
   );
+
+  if (full.note) {
+    row.notes.push(`L5-b: ${full.note}.`);
+  }
 }
 
 async function checkArchive(title: ArchiveTitle): Promise<ScenarioRow> {

@@ -210,6 +210,8 @@ async function main() {
     });
 
     peertube = {
+      // Catalog placeholder first: `title` below is the real video's title.
+      ...titles.peertube,
       found: true,
       movieId: movie.id,
       associationId: association.id,
@@ -218,7 +220,6 @@ async function main() {
       durationSeconds: pick.durationSeconds,
       type: pick.asset.type,
       allowedHosts: pick.allowedHosts,
-      ...titles.peertube,
     };
     mkdirSync(OUT_DIR, { recursive: true });
     writeFileSync(`${OUT_DIR}/peertube-hosts.txt`, pick.allowedHosts.join(","));

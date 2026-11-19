@@ -231,6 +231,94 @@ export interface DecodeResult {
   ok: boolean;
   decodedSeconds: number;
   reason?: string;
+  /** How the media was read when that differs from the plain URL (shown in the report). */
+  note?: string;
+}
+
+/**
+ * ffmpeg's HLS demuxer reads only the FIRST segment of a playlist made of one
+ * fragmented MP4 with #EXT-X-MAP + #EXT-X-BYTERANGE (PeerTube's format) and
+ * still exits successfully, so a "full decode" would stop after ~6 s. Every
+ * segment of such a playlist is a contiguous byte range of ONE file, hence that
+ * file is the whole video: decode it directly. Null when the playlist has
+ * another shape (the plain URL is then used).
+ */
+export async function singleFmp4OfHls(url: string): Promise<string | null> {
+  if (!/\.m3u8(?:[?#]|$)/i.test(url)) {
+    return null;
+  }
+
+  const master = await getText(url);
+
+  if (!master.ok) {
+    return null;
+  }
+
+  let mediaUrl = url;
+  let media = master.text;
+
+  if (master.text.includes("#EXT-X-STREAM-INF")) {
+    // The variant with the lowest bandwidth: the same video, the smallest download.
+    const lines = master.text.split(/\r?\n/);
+    let best: { bandwidth: number; uri: string } | null = null;
+
+    for (let index = 0; index < lines.length - 1; index += 1) {
+      const match = /^#EXT-X-STREAM-INF:.*?\bBANDWIDTH=(\d+)/.exec(lines[index]);
+      const uri = lines[index + 1]?.trim();
+
+      if (match && uri && !uri.startsWith("#")) {
+        const bandwidth = Number(match[1]);
+
+        if (best === null || bandwidth < best.bandwidth) {
+          best = { bandwidth, uri };
+        }
+      }
+    }
+
+    if (!best) {
+      return null;
+    }
+
+    try {
+      mediaUrl = new URL(best.uri, url).toString();
+    } catch {
+      return null;
+    }
+
+    const variant = await getText(mediaUrl);
+
+    if (!variant.ok) {
+      return null;
+    }
+
+    media = variant.text;
+  }
+
+  if (!media.includes("#EXT-X-MAP") || !media.includes("#EXT-X-BYTERANGE")) {
+    return null;
+  }
+
+  const files = new Set<string>();
+
+  for (const line of media.split(/\r?\n/)) {
+    const trimmed = line.trim();
+
+    if (trimmed !== "" && !trimmed.startsWith("#")) {
+      files.add(trimmed);
+    }
+  }
+
+  const mapUri = /#EXT-X-MAP:.*?URI="([^"]+)"/.exec(media)?.[1];
+
+  if (files.size !== 1 || !mapUri || !files.has(mapUri)) {
+    return null;
+  }
+
+  try {
+    return new URL(mapUri, mediaUrl).toString();
+  } catch {
+    return null;
+  }
 }
 
 /** "00:09:56.480000" -> seconds, else null. */
@@ -274,7 +362,13 @@ export async function decodeMedia(
     args.push("-t", String(options.limitSeconds));
   }
 
-  args.push("-i", url, "-f", "null", "-");
+  // Public HLS only (the authenticated proxy URL has no ".m3u8" to recognise).
+  const flattened = options.headers ? null : await singleFmp4OfHls(url);
+  const note = flattened
+    ? "decodificado a partir do arquivo fMP4 único da variante HLS (o demuxer HLS do ffmpeg só lê o 1º segmento deste formato; os segmentos são faixas contíguas desse arquivo)"
+    : undefined;
+
+  args.push("-i", flattened ?? url, "-f", "null", "-");
 
   let decodedSeconds = 0;
   const result = await runCommand("ffmpeg", args, {
@@ -289,17 +383,18 @@ export async function decodeMedia(
   });
 
   if (result.spawnError) {
-    return { ok: false, decodedSeconds, reason: `ffmpeg indisponível (${result.spawnError}).` };
+    return { ok: false, decodedSeconds, note, reason: `ffmpeg indisponível (${result.spawnError}).` };
   }
 
   if (result.timedOut) {
-    return { ok: false, decodedSeconds, reason: "ffmpeg excedeu o tempo limite." };
+    return { ok: false, decodedSeconds, note, reason: "ffmpeg excedeu o tempo limite." };
   }
 
   if (result.code !== 0) {
     return {
       ok: false,
       decodedSeconds,
+      note,
       reason: `ffmpeg falhou (código ${String(result.code)}): ${result.stderr.trim().slice(0, 300)}`,
     };
   }
@@ -308,6 +403,7 @@ export async function decodeMedia(
     return {
       ok: false,
       decodedSeconds,
+      note,
       reason: `ffmpeg registrou erros de decodificação: ${result.stderr.trim().slice(0, 300)}`,
     };
   }
@@ -316,11 +412,12 @@ export async function decodeMedia(
     return {
       ok: false,
       decodedSeconds,
+      note,
       reason: `decodificou só ${decodedSeconds.toFixed(1)} s (mínimo ${options.minDecodedSeconds.toFixed(1)} s).`,
     };
   }
 
-  return { ok: true, decodedSeconds };
+  return { ok: true, decodedSeconds, note };
 }
 
 // ---------------------------------------------------------------------------

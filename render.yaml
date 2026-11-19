@@ -83,3 +83,7 @@ services:
       # endpoint desativado.
       - key: CRON_SECRET
         sync: false
+      # Validade das URLs do proxy de mídia em segundos (300 a 43200; vazio =
+      # 21600, ou seja, 6 h).
+      - key: PLAYBACK_PROXY_TTL_SECONDS
+        sync: false

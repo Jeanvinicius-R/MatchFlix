@@ -9,9 +9,14 @@ name: Playback reverify
 #   MATCHFLIX_URL  base URL of the site, e.g. https://matchflix.onrender.com
 #                  (a repository variable with the same name also works)
 #   CRON_SECRET    same value as the CRON_SECRET env var of the site
+#
+# AGENDAMENTO DESLIGADO de propósito: o endpoint já passou no e2e local (401 sem
+# token, 401 com token errado, 200 com o certo), mas ainda não foi validado no
+# Render. Só rode manualmente (Actions -> Playback reverify -> Run workflow).
+# Para ligar depois de validar, acrescente em "on:":
+#   schedule:
+#     - cron: "23 */6 * * *"
 on:
-  schedule:
-    - cron: "23 */6 * * *"
   workflow_dispatch:
 
 permissions: {}
