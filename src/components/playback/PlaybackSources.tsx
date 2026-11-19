@@ -13,7 +13,7 @@ interface PlaybackSourcesProps {
   target: WatchTarget;
   resumeAt?: number;
   nextHref?: string;
-  /** Start playing on load (direct/hls sources only). */
+  /** Start playing on load (direct/hls/dash sources only). */
   autoPlay?: boolean;
 }
 
@@ -53,7 +53,7 @@ function describeProgress(source: PlaybackSource): string {
   if (source.provider === "youtube") {
     return " · progresso salvo pela API oficial do player do YouTube";
   }
-  if (source.type === "direct" || source.type === "hls") {
+  if (source.type === "direct" || source.type === "hls" || source.type === "dash") {
     return " · progresso salvo neste player";
   }
   if (source.type === "iframe") {

@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { isAdapterFailure } from "./adapter.types";
+import {
+  isAdapterFailure,
+  type DiscoveryQuery,
+  type PlaybackAdapter,
+} from "./adapter.types";
 import { createArchiveAdapter, parseAllowedLicense, pickVideoFile } from "./archive.adapter";
 
 interface Call {
@@ -322,5 +326,142 @@ describe("createArchiveAdapter", () => {
     assert.equal(adapter.id, "archive");
     assert.ok(adapter.label.length > 0);
     assert.ok(adapter.assetIdHint.length > 0);
+  });
+});
+
+function searchBody(docs: unknown[]) {
+  return { responseHeader: { status: 0 }, response: { numFound: docs.length, docs } };
+}
+
+const BBB_QUERY: DiscoveryQuery = {
+  tmdbId: 10378,
+  mediaType: "MOVIE",
+  seasonNumber: 0,
+  episodeNumber: 0,
+  title: "Big Buck Bunny",
+  originalTitle: "Big Buck Bunny",
+  year: 2008,
+  runtimeMinutes: 10,
+};
+
+async function discoverWith(adapter: PlaybackAdapter, query: DiscoveryQuery) {
+  assert.ok(adapter.discover, "the adapter should implement discover()");
+  return adapter.discover(query, signal());
+}
+
+describe("archive adapter discover()", () => {
+  it("searches advancedsearch by title and returns only allowed licenses as candidates", async () => {
+    const { impl, calls } = fakeFetch(() =>
+      json(
+        searchBody([
+          {
+            identifier: "BigBuckBunny_124",
+            title: "Big Buck Bunny",
+            year: "2008",
+            licenseurl: CC_BY,
+            runtime: "00:09:56",
+          },
+          {
+            identifier: "bbb-nc",
+            title: "Big Buck Bunny (non commercial)",
+            year: 2008,
+            licenseurl: "https://creativecommons.org/licenses/by-nc/3.0/",
+          },
+          { identifier: "bbb-nolicense", title: "Big Buck Bunny", year: 2008 },
+          { identifier: "../bad", title: "Big Buck Bunny", licenseurl: CC_BY },
+          { identifier: "dup", title: "Dup", licenseurl: CC_BY, date: "1999-04-01T00:00:00Z" },
+          { identifier: "dup", title: "Dup again", licenseurl: CC_BY },
+          "garbage",
+        ]),
+      ),
+    );
+    const result = await discoverWith(createArchiveAdapter({ fetchImpl: impl }), BBB_QUERY);
+
+    assert.ok(Array.isArray(result));
+    assert.deepEqual(result, [
+      {
+        providerAssetId: "BigBuckBunny_124",
+        title: "Big Buck Bunny",
+        year: 2008,
+        durationMinutes: (9 * 60 + 56) / 60,
+      },
+      { providerAssetId: "dup", title: "Dup", year: 1999 },
+    ]);
+    assert.equal(calls.length, 1);
+
+    const url = new URL(calls[0].url);
+    assert.equal(url.origin + url.pathname, "https://archive.org/advancedsearch.php");
+    assert.equal(url.searchParams.get("output"), "json");
+    assert.equal(url.searchParams.get("q"), '(title:("Big Buck Bunny")) AND mediatype:movies');
+    assert.ok(url.searchParams.getAll("fl[]").includes("licenseurl"));
+    assert.ok(Number(url.searchParams.get("rows")) <= 25);
+  });
+
+  it("never produces an identifier match (the Archive declares none we trust)", async () => {
+    const { impl } = fakeFetch(() =>
+      json(searchBody([{ identifier: "abc", title: "Film", year: 2000, licenseurl: CC_BY }])),
+    );
+    const result = await discoverWith(createArchiveAdapter({ fetchImpl: impl }), BBB_QUERY);
+
+    assert.ok(Array.isArray(result));
+    assert.equal(result[0].externalIds, undefined);
+  });
+
+  it("searches both titles and strips quotes from the phrase", async () => {
+    const { impl, calls } = fakeFetch(() => json(searchBody([])));
+    const result = await discoverWith(createArchiveAdapter({ fetchImpl: impl }), {
+      ...BBB_QUERY,
+      title: 'O "Grande" Coelho',
+      originalTitle: "Big Buck Bunny",
+    });
+
+    assert.deepEqual(result, []);
+    assert.equal(
+      new URL(calls[0].url).searchParams.get("q"),
+      '(title:("O Grande Coelho") OR title:("Big Buck Bunny")) AND mediatype:movies',
+    );
+  });
+
+  it("parses runtimes given as mm:ss or seconds and ignores nonsense", async () => {
+    const { impl } = fakeFetch(() =>
+      json(
+        searchBody([
+          { identifier: "a", title: "A", licenseurl: CC_BY, runtime: "9:56" },
+          { identifier: "b", title: "B", licenseurl: CC_BY, runtime: "600" },
+          { identifier: "c", title: "C", licenseurl: CC_BY, runtime: "soon" },
+        ]),
+      ),
+    );
+    const result = await discoverWith(createArchiveAdapter({ fetchImpl: impl }), BBB_QUERY);
+
+    assert.ok(Array.isArray(result));
+    assert.equal(result[0].durationMinutes, (9 * 60 + 56) / 60);
+    assert.equal(result[1].durationMinutes, 10);
+    assert.equal(result[2].durationMinutes, undefined);
+  });
+
+  it("does not search for episodes", async () => {
+    const { impl, calls } = fakeFetch(() => json(searchBody([])));
+    const result = await discoverWith(createArchiveAdapter({ fetchImpl: impl }), {
+      ...BBB_QUERY,
+      mediaType: "EPISODE",
+      seasonNumber: 1,
+      episodeNumber: 2,
+    });
+
+    assert.deepEqual(result, []);
+    assert.equal(calls.length, 0);
+  });
+
+  it("fails closed on HTTP errors and malformed bodies", async () => {
+    const down = fakeFetch(() => new Response("nope", { status: 503 }));
+    const bad = fakeFetch(() => json({ response: { docs: "x" } }));
+    const failed = await discoverWith(createArchiveAdapter({ fetchImpl: down.impl }), BBB_QUERY);
+    const garbage = await discoverWith(createArchiveAdapter({ fetchImpl: bad.impl }), BBB_QUERY);
+
+    assert.ok(!Array.isArray(failed));
+    assert.match(failed.reason, /HTTP 503/);
+    assert.ok(!Array.isArray(garbage));
+    assert.match(garbage.reason, /inválida/);
   });
 });

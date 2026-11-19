@@ -78,6 +78,69 @@ describe("sanitizeSource: main URL", () => {
   });
 });
 
+describe("sanitizeSource: media proxy path", () => {
+  const token = "A".repeat(64);
+  const proxyUrl = `/api/playback/proxy/${token}`;
+
+  it("accepts the proxy path as the main URL of direct and hls sources", () => {
+    for (const type of ["direct", "hls"] as PlaybackType[]) {
+      const input = source({ type, url: proxyUrl });
+      assert.deepEqual(sanitizeSource(input), input, type);
+      assert.equal(describeSourceProblem(input), null, type);
+    }
+  });
+
+  it("accepts url-safe base64 characters in the token", () => {
+    const input = source({ url: "/api/playback/proxy/abc_DEF-123456789012" });
+    assert.notEqual(sanitizeSource(input), null);
+  });
+
+  it("refuses the proxy path for iframe, external and dash sources", () => {
+    for (const type of ["iframe", "external", "dash"] as PlaybackType[]) {
+      assert.equal(sanitizeSource(source({ type, url: proxyUrl })), null, type);
+    }
+  });
+
+  const badProxyPaths = [
+    "/api/playback/proxy/",
+    "/api/playback/proxy/short",
+    `/api/playback/proxy/${"A".repeat(4097)}`,
+    `/api/playback/proxy/${token}/extra`,
+    `/api/playback/proxy/${token}?x=1`,
+    `/api/playback/proxy/${token}#x`,
+    `/api/playback/proxy/${token}.mp4`,
+    `/api/playback/proxy/${"A".repeat(20)}%2e%2e`,
+    `/api/playback/proxy/../${token}`,
+    `//api/playback/proxy/${token}`,
+    `/api/playback/other/${token}`,
+    `/api/playback/proxyx/${token}`,
+    `/API/playback/proxy/${token}`,
+    ` /api/playback/proxy/${token}`,
+    `/api/playback/proxy/${token}\n`,
+    "/api/library/video.mp4",
+  ];
+
+  for (const url of badProxyPaths) {
+    it(`still refuses the relative path ${JSON.stringify(url.slice(0, 60))}`, () => {
+      assert.equal(sanitizeSource(source({ url })), null);
+    });
+  }
+
+  it("does not accept the proxy path in qualities or subtitles", () => {
+    const result = sanitizeSource(
+      source({
+        url: proxyUrl,
+        qualities: [{ label: "720p", url: proxyUrl }],
+        subtitles: [{ language: "pt", label: "pt", url: proxyUrl }],
+      }),
+    );
+
+    assert.notEqual(result, null);
+    assert.equal("qualities" in (result ?? {}), false);
+    assert.equal("subtitles" in (result ?? {}), false);
+  });
+});
+
 describe("sanitizeSource: extras", () => {
   it("keeps clean qualities and subtitles untouched", () => {
     const input = source({

@@ -229,3 +229,102 @@ export function describeMediaError(code: number | undefined): string {
       return "Não foi possível reproduzir o vídeo.";
   }
 }
+
+// ---------------------------------------------------------------------------
+// MPEG-DASH (dash.js). The shapes below are the few fields the menus read;
+// dash.js 5 calls them "representations", 4.x "bitrate infos", so both
+// spellings of the bandwidth field are accepted.
+// ---------------------------------------------------------------------------
+
+/** A video rendition reported by dash.js. */
+export interface DashRepresentation {
+  height?: number;
+  width?: number;
+  /** dash.js 5. */
+  bandwidth?: number;
+  /** dash.js 4. */
+  bitrate?: number;
+}
+
+/** A text label of a dash.js media track. */
+export interface DashLabel {
+  text?: string;
+  lang?: string;
+}
+
+/** An audio or text track (MediaInfo) reported by dash.js. */
+export interface DashTrackInfo {
+  lang?: string | null;
+  labels?: readonly DashLabel[];
+  roles?: readonly string[];
+}
+
+/** dash.js error codes that mean "could not download" (manifest, sidx, segments). */
+const DASH_NETWORK_ERROR_CODES: ReadonlySet<number> = new Set([11, 25, 26, 27, 28, 29]);
+/** dash.js error codes that mean "the manifest/format cannot be used". */
+const DASH_UNSUPPORTED_ERROR_CODES: ReadonlySet<number> = new Set([10, 22, 30, 34]);
+
+/** Quality menu of a DASH stream: same rules as HLS (Auto + one entry per height). */
+export function buildDashQualityOptions(
+  representations: readonly DashRepresentation[],
+): MenuOption[] {
+  return buildHlsQualityOptions(
+    representations.map((representation) => ({
+      height: representation.height,
+      width: representation.width,
+      bitrate: representation.bandwidth ?? representation.bitrate,
+    })),
+  );
+}
+
+function labelForDashTrack(track: DashTrackInfo): { name?: string; lang?: string } {
+  const label = track.labels?.find((entry) => entry.text?.trim())?.text;
+  return { name: label, lang: track.lang ?? undefined };
+}
+
+/** Audio menu of a DASH stream; empty unless there are at least two tracks. */
+export function buildDashAudioOptions(tracks: readonly DashTrackInfo[]): MenuOption[] {
+  return buildAudioOptions(tracks.map(labelForDashTrack));
+}
+
+/** Subtitle menu of text tracks embedded in a DASH stream ("Desativadas" first). */
+export function buildDashSubtitleOptions(tracks: readonly DashTrackInfo[]): MenuOption[] {
+  if (tracks.length === 0) {
+    return [];
+  }
+  return [
+    { value: SUBTITLES_OFF_VALUE, label: "Desativadas" },
+    ...tracks.map((track, index) => ({
+      value: index,
+      label: labelForAudioTrack(labelForDashTrack(track), index),
+    })),
+  ];
+}
+
+/**
+ * Maps a dash.js error code to the HTMLMediaElement code `describeMediaError`
+ * understands (2 network, 4 source/format), so DASH failures reuse the same
+ * overlay messages as HLS and progressive video.
+ */
+export function dashErrorToMediaCode(code: number | undefined): number | undefined {
+  if (code === undefined) {
+    return undefined;
+  }
+  if (DASH_NETWORK_ERROR_CODES.has(code)) {
+    return 2;
+  }
+  if (DASH_UNSUPPORTED_ERROR_CODES.has(code)) {
+    return 4;
+  }
+  return undefined;
+}
+
+/** Pulls the numeric code out of whatever a dash.js "error" event carries. */
+export function readDashErrorCode(event: unknown): number | undefined {
+  const error = (event as { error?: unknown } | null | undefined)?.error;
+  if (typeof error === "number") {
+    return error;
+  }
+  const code = (error as { code?: unknown } | null | undefined)?.code;
+  return typeof code === "number" ? code : undefined;
+}

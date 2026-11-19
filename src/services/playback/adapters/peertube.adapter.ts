@@ -10,7 +10,9 @@ import {
   isRecord,
   readRecord,
   type AdapterFailure,
+  type DiscoveryQuery,
   type PlaybackAdapter,
+  type ProviderCandidate,
   type ResolvedAsset,
 } from "./adapter.types";
 
@@ -300,6 +302,123 @@ async function fetchSubtitles(
   return subtitles;
 }
 
+/** Instances searched per sync (the allowlist is small; this bounds a misconfiguration). */
+const MAX_DISCOVER_INSTANCES = 5;
+const DISCOVER_COUNT = 10;
+const MAX_DISCOVER_RESULTS = 12;
+/** A film shorter than this share of TMDB's runtime is probably a clip or a trailer. */
+const DISCOVER_MIN_RUNTIME_PERCENT = 70;
+
+/** "(2008)" in a title: PeerTube has no film year, uploaders often write it. */
+const TITLE_YEAR_PATTERN = /[([]\s*((?:19|20)\d{2})\s*[)\]]/;
+
+function yearOfDate(value: unknown): number | undefined {
+  const text = readString(value);
+  const year = text ? Number(text.slice(0, 4)) : NaN;
+
+  return Number.isInteger(year) && year >= 1850 && year <= 2200 ? year : undefined;
+}
+
+/**
+ * One search hit as a suggestion, or null when it is not a local, non-live video
+ * under an allowed licence. The year is the ORIGINAL publication date or a year
+ * tagged in the title; the upload date says nothing about the film, so it is not used.
+ */
+function toDiscoveredCandidate(host: string, hit: unknown): ProviderCandidate | null {
+  if (!isRecord(hit)) {
+    return null;
+  }
+
+  const uuid = readString(hit.uuid);
+  const title = readString(hit.name);
+  const licence = readNumber(readRecord(hit, "licence").id);
+
+  if (
+    !uuid ||
+    !VIDEO_ID_PATTERN.test(uuid) ||
+    !title ||
+    hit.isLive === true ||
+    hit.isLocal === false ||
+    licence === undefined ||
+    !PEERTUBE_ALLOWED_LICENCE_IDS.has(licence)
+  ) {
+    return null;
+  }
+
+  const candidate: ProviderCandidate = {
+    providerAssetId: `${host}/${uuid}`,
+    title: title.slice(0, 300),
+  };
+  const titleYear = TITLE_YEAR_PATTERN.exec(title);
+  const year =
+    yearOfDate(hit.originallyPublishedAt) ?? (titleYear ? Number(titleYear[1]) : undefined);
+  const seconds = readNumber(hit.duration);
+
+  if (year !== undefined) {
+    candidate.year = year;
+  }
+
+  if (seconds !== undefined && seconds > 0) {
+    candidate.durationMinutes = seconds / 60;
+  }
+
+  return candidate;
+}
+
+/** One instance's search for one phrase; failures become a reason, never a throw. */
+async function searchInstance(
+  fetchImpl: typeof fetch,
+  host: string,
+  phrase: string,
+  minSeconds: number | undefined,
+  signal: AbortSignal,
+): Promise<{ ok: true; items: ProviderCandidate[] } | { ok: false; reason: string }> {
+  const params = new URLSearchParams();
+
+  params.set("search", phrase);
+  params.set("searchTarget", "local");
+  params.set("isLive", "false");
+  params.set("isLocal", "true");
+  params.set("count", String(DISCOVER_COUNT));
+
+  // PeerTube reads a list as a repeated parameter, not as a comma-separated value.
+  for (const id of PEERTUBE_ALLOWED_LICENCE_IDS) {
+    params.append("licenceOneOf", String(id));
+  }
+
+  if (minSeconds !== undefined) {
+    params.set("durationMin", String(minSeconds));
+  }
+
+  const result = await fetchJson<unknown>(
+    fetchImpl,
+    `https://${host}/api/v1/search/videos?${params.toString()}`,
+    { signal, what: `a busca do PeerTube (${host})`, allowedHost: (target) => target === host },
+  );
+
+  if (!result.ok) {
+    return result;
+  }
+
+  const body = result.data;
+
+  if (!isRecord(body) || !Array.isArray(body.data)) {
+    return { ok: false, reason: `A busca do PeerTube (${host}) devolveu uma resposta inválida.` };
+  }
+
+  const items: ProviderCandidate[] = [];
+
+  for (const hit of body.data as unknown[]) {
+    const candidate = toDiscoveredCandidate(host, hit);
+
+    if (candidate) {
+      items.push(candidate);
+    }
+  }
+
+  return { ok: true, items };
+}
+
 export interface PeerTubeAdapterOptions {
   fetchImpl?: typeof fetch;
   /** Hosts ("framatube.org") the administrator trusts. Empty/omitted = adapter off. */
@@ -319,6 +438,72 @@ export function createPeerTubeAdapter(options: PeerTubeAdapterOptions = {}): Pla
     label: "PeerTube",
     assetIdHint:
       'Instância e vídeo: "<host>/<uuid>" (ex.: "framatube.org/f56ae219-f076-4faf-a7f2-ba8b29d1cc5f"). A instância precisa estar em PEERTUBE_ALLOWED_INSTANCES.',
+
+    /**
+     * Searches every allowlisted instance (licence filter + minimum duration done
+     * by PeerTube itself, re-checked here). Episodes are not supported: PeerTube
+     * videos carry no season/episode metadata to match against, so EPISODE
+     * queries return []. Results are suggestions; resolve() keeps the full gate.
+     */
+    async discover(
+      query: DiscoveryQuery,
+      { signal },
+    ): Promise<ProviderCandidate[] | AdapterFailure> {
+      if (allowed.size === 0) {
+        return { reason: "PeerTube desativado (PEERTUBE_ALLOWED_INSTANCES está vazio)." };
+      }
+
+      if (query.mediaType !== "MOVIE") {
+        return [];
+      }
+
+      const phrases = Array.from(
+        new Set(
+          [query.title, query.originalTitle]
+            .map((title) => (title ?? "").replace(/\s+/g, " ").trim().slice(0, 120))
+            .filter((phrase) => phrase !== ""),
+        ),
+      );
+
+      if (phrases.length === 0) {
+        return [];
+      }
+
+      const runtimeMinutes = query.runtimeMinutes;
+      const minSeconds =
+        typeof runtimeMinutes === "number" && Number.isFinite(runtimeMinutes) && runtimeMinutes > 0
+          ? Math.floor((runtimeMinutes * 60 * DISCOVER_MIN_RUNTIME_PERCENT) / 100)
+          : undefined;
+      const hosts = Array.from(allowed).slice(0, MAX_DISCOVER_INSTANCES);
+      const searches = hosts.flatMap((host) =>
+        phrases.map((phrase) => searchInstance(fetchImpl, host, phrase, minSeconds, signal)),
+      );
+      const outcomes = await Promise.all(searches);
+      const candidates: ProviderCandidate[] = [];
+      const seen = new Set<string>();
+      let firstFailure: string | undefined;
+
+      for (const outcome of outcomes) {
+        if (!outcome.ok) {
+          firstFailure ??= outcome.reason;
+          continue;
+        }
+
+        for (const item of outcome.items) {
+          if (!seen.has(item.providerAssetId)) {
+            seen.add(item.providerAssetId);
+            candidates.push(item);
+          }
+        }
+      }
+
+      // Every search failed: say so instead of pretending the provider has nothing.
+      if (candidates.length === 0 && firstFailure !== undefined && outcomes.every((o) => !o.ok)) {
+        return { reason: firstFailure };
+      }
+
+      return candidates.slice(0, MAX_DISCOVER_RESULTS);
+    },
 
     async resolve(assetId, { signal }): Promise<ResolvedAsset | AdapterFailure> {
       if (allowed.size === 0) {

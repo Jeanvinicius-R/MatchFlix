@@ -1,6 +1,10 @@
 import type { AgeRating } from "@/types/content.types";
 import { buildTmdbImageUrl } from "@/services/tmdb/tmdb.client";
 import type {
+  TmdbExternalIds,
+  TmdbExternalIdsRaw,
+  TmdbFindResponseRaw,
+  TmdbFindResult,
   TmdbMovieDetails,
   TmdbMovieDetailsRaw,
   TmdbMovieSearchResult,
@@ -165,4 +169,29 @@ export function mapWatchProviders(raw: TmdbWatchProvidersRaw, region: string): T
     rent: mapWatchProviderList(country.rent),
     buy: mapWatchProviderList(country.buy),
   };
+}
+
+const IMDB_ID_PATTERN = /^tt\d{5,10}$/;
+
+/** Anything that is not a well-formed "tt1234567" becomes null. */
+export function mapExternalIds(raw: TmdbExternalIdsRaw): TmdbExternalIds {
+  const imdbId = raw.imdb_id?.trim().toLowerCase();
+  return { imdbId: imdbId && IMDB_ID_PATTERN.test(imdbId) ? imdbId : null };
+}
+
+/** The first movie / series TMDB lists for the external id (absent keys when none). */
+export function mapFindResult(raw: TmdbFindResponseRaw): TmdbFindResult {
+  const result: TmdbFindResult = {};
+  const movieId = raw.movie_results?.[0]?.id;
+  const seriesId = raw.tv_results?.[0]?.id;
+
+  if (typeof movieId === "number") {
+    result.movieId = movieId;
+  }
+
+  if (typeof seriesId === "number") {
+    result.seriesId = seriesId;
+  }
+
+  return result;
 }

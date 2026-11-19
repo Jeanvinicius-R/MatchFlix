@@ -8,7 +8,8 @@ import type { PlaybackSource, PlaybackType } from "./playback.types";
  * Rules: only http/https, no credentials embedded in the URL, a known source
  * type, and https for everything the player fetches itself (direct/hls/dash,
  * qualities, subtitles). Iframes/external links may still be plain http because
- * the browser treats them as separate documents.
+ * the browser treats them as separate documents. The one exception to "absolute
+ * URL" is the same-origin media proxy path (see PROXY_PATH_PATTERN).
  */
 
 const ALLOWED_TYPES: ReadonlySet<PlaybackType> = new Set<PlaybackType>([
@@ -27,6 +28,16 @@ const HTTPS_ONLY_TYPES: ReadonlySet<PlaybackType> = new Set<PlaybackType>([
 ]);
 
 const MAX_URL_LENGTH = 4096;
+
+/**
+ * The only same-origin path a source may use: the media proxy, which serves
+ * (encrypted, per-user, expiring) tokens minted by the association provider.
+ * Only the main URL of direct/hls sources may be one; any other relative path
+ * is still refused.
+ */
+const PROXY_PATH_PATTERN = /^\/api\/playback\/proxy\/[A-Za-z0-9_-]{16,4096}$/;
+
+const PROXYABLE_TYPES: ReadonlySet<PlaybackType> = new Set<PlaybackType>(["direct", "hls"]);
 
 function parseWebUrl(value: unknown): URL | null {
   if (typeof value !== "string" || value.length === 0 || value.length > MAX_URL_LENGTH) {
@@ -60,6 +71,14 @@ function isHttpsUrl(value: unknown): boolean {
 export function describeSourceProblem(source: PlaybackSource): string | null {
   if (!ALLOWED_TYPES.has(source.type)) {
     return `tipo de fonte não permitido (${String(source.type)})`;
+  }
+
+  if (
+    PROXYABLE_TYPES.has(source.type) &&
+    typeof source.url === "string" &&
+    PROXY_PATH_PATTERN.test(source.url)
+  ) {
+    return null;
   }
 
   const url = parseWebUrl(source.url);

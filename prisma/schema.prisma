@@ -82,6 +82,21 @@ enum AvailabilityStatus {
   UNAVAILABLE
 }
 
+// Como a sugestão de associação foi encontrada. TMDB_ID/IMDB_ID: o próprio
+// provedor declara o identificador (forte). METADATA: título/ano/duração
+// (fraca — sempre exige olhar humano).
+enum MatchMethod {
+  TMDB_ID
+  IMDB_ID
+  METADATA
+}
+
+enum CandidateStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model User {
   id           String   @id @default(uuid()) @db.Uuid
   email        String   @unique
@@ -275,6 +290,32 @@ model PlaybackAssociation {
 
   @@unique([tmdbId, mediaType, seasonNumber, episodeNumber, provider, providerAssetId], map: "PlaybackAssociation_asset_key")
   @@index([tmdbId, mediaType, seasonNumber, episodeNumber], map: "PlaybackAssociation_lookup_idx")
+}
+
+// Sugestão automática de associação (descoberta/sincronização). NUNCA é
+// reproduzida: só vira PlaybackAssociation (VERIFIED) quando um administrador
+// aprova informando a licença/contrato. Mesma chave de PlaybackAssociation.
+model PlaybackCandidate {
+  id              String               @id @default(uuid()) @db.Uuid
+  tmdbId          Int
+  mediaType       AssociationMediaType
+  seasonNumber    Int                  @default(0)
+  episodeNumber   Int                  @default(0)
+  provider        String
+  providerAssetId String
+  providerTitle   String
+  providerYear    Int?
+  matchMethod     MatchMethod
+  /// 0-100. TMDB_ID = 100, IMDB_ID = 98, METADATA conforme título/ano/duração.
+  score           Int
+  /// Por que o sistema acha que é o mesmo título (mostrado ao admin).
+  reason          String
+  status          CandidateStatus      @default(PENDING)
+  createdAt       DateTime             @default(now())
+  decidedAt       DateTime?
+
+  @@unique([tmdbId, mediaType, seasonNumber, episodeNumber, provider, providerAssetId], map: "PlaybackCandidate_asset_key")
+  @@index([status, score], map: "PlaybackCandidate_review_idx")
 }
 
 // Append-only log of playback sessions, used for "assistidos recentemente"

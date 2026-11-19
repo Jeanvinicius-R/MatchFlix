@@ -10,13 +10,18 @@ import {
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import type { AssociationAvailabilityResult } from "@/features/admin/components/CandidateShared";
 import { RIGHTS_STATUSES } from "@/schemas/playback-association.schemas";
 import type { AssociationView } from "@/services/playback-association.service";
+
+type AssociationAvailabilityState = AssociationAvailabilityResult["state"];
 
 interface PlaybackAssociationRowProps {
   association: AssociationView;
   /** Display name of the provider adapter (falls back to its id). */
   providerLabel: string;
+  /** Availability as viewers get it, computed on the server. */
+  availability: AssociationAvailabilityResult;
 }
 
 type BadgeTone = "success" | "warning" | "danger" | "neutral";
@@ -42,15 +47,19 @@ const RIGHTS_TONES: Record<AssociationView["rightsStatus"], BadgeTone> = {
   REVOKED: "danger",
 };
 
-const AVAILABILITY_LABELS: Record<AssociationView["availabilityStatus"], string> = {
-  UNKNOWN: "Não checada",
-  AVAILABLE: "Disponível",
+// The state is computed on the server (database row + freshness window), never
+// from "an association exists": only CONFIRMED means a recent real check passed.
+const AVAILABILITY_LABELS: Record<AssociationAvailabilityState, string> = {
+  NONE: "Sem direitos",
+  CONFIRMED: "Confirmada",
+  UNKNOWN: "Desconhecida",
   UNAVAILABLE: "Indisponível",
 };
 
-const AVAILABILITY_TONES: Record<AssociationView["availabilityStatus"], BadgeTone> = {
-  UNKNOWN: "neutral",
-  AVAILABLE: "success",
+const AVAILABILITY_TONES: Record<AssociationAvailabilityState, BadgeTone> = {
+  NONE: "neutral",
+  CONFIRMED: "success",
+  UNKNOWN: "warning",
   UNAVAILABLE: "danger",
 };
 
@@ -78,6 +87,7 @@ function Badge({ tone, children }: { tone: BadgeTone; children: string }) {
 export function PlaybackAssociationRow({
   association,
   providerLabel,
+  availability,
 }: PlaybackAssociationRowProps) {
   const rightsHelpId = useId();
   const [isVerifying, startVerify] = useTransition();
@@ -156,9 +166,12 @@ export function PlaybackAssociationRow({
           </Badge>
         </td>
         <td className="px-3 py-3">
-          <Badge tone={AVAILABILITY_TONES[association.availabilityStatus]}>
-            {AVAILABILITY_LABELS[association.availabilityStatus]}
+          <Badge tone={AVAILABILITY_TONES[availability.state]}>
+            {AVAILABILITY_LABELS[availability.state]}
           </Badge>
+          <p className="text-muted-foreground mt-1 max-w-[12rem] text-xs">
+            {availability.note}
+          </p>
         </td>
         <td className="px-3 py-3 whitespace-nowrap">
           {formatDate(association.lastVerifiedAt)}

@@ -21,7 +21,7 @@ interface PlaybackPlayerProps {
   target?: WatchTarget;
   resumeAt?: number;
   nextHref?: string;
-  /** Start playing on load (direct/hls sources only). */
+  /** Start playing on load (direct/hls/dash sources only). */
   autoPlay?: boolean;
   /** The current source cannot play and the viewer asked for another one. */
   onFatalError?: () => void;
@@ -111,7 +111,7 @@ export default function PlaybackPlayer({
               : "no-referrer"
           }
         />
-      ) : source.type === "direct" || source.type === "hls" ? (
+      ) : source.type === "direct" || source.type === "hls" || source.type === "dash" ? (
         <AdaptivePlayer
           key={source.id}
           source={source}
@@ -121,20 +121,6 @@ export default function PlaybackPlayer({
           autoPlay={autoPlay}
           onFatalError={onFatalError}
         />
-      ) : source.type === "dash" ? (
-        <div className="flex h-full w-full flex-col items-center justify-center gap-3 px-4 text-center text-white">
-          <p>Este formato de vídeo (DASH) ainda não é suportado pelo player.</p>
-          <p className="text-sm text-white/70">Tente outra fonte, se houver.</p>
-          {onFatalError && (
-            <button
-              type="button"
-              onClick={onFatalError}
-              className="rounded bg-white/10 px-4 py-2 transition-colors hover:bg-white/20 focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
-            >
-              Tentar outra fonte
-            </button>
-          )}
-        </div>
       ) : source.type === "external" ? (
         <div className="flex h-full w-full flex-col items-center justify-center gap-3 px-4 text-center text-white">
           <p>Esta fonte não pode ser exibida aqui dentro.</p>

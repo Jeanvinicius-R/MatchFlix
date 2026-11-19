@@ -46,6 +46,11 @@ export interface PlaybackSource {
 
 export interface PlaybackContext {
   tmdbId: number;
+  /**
+   * The signed-in user asking. Sources served through the media proxy are
+   * bound to this user; without it they are not offered.
+   */
+  viewerId?: string;
   season?: number;
   episode?: number;
 

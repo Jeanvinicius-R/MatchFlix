@@ -4,6 +4,14 @@ import type Hls from "hls.js";
 import { Check, Settings } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  createDashPlayer,
+  disposeDashPlayer,
+  listDashRepresentations,
+  selectDashRepresentation,
+  type DashPlayerLike,
+  type DashRepresentationWithId,
+} from "@/components/playback/dash-loader";
 import { recordWatchStartAction, saveProgressAction } from "@/app/watch/actions";
 import type { WatchTarget } from "@/components/playback/playback-target";
 import {
@@ -12,6 +20,10 @@ import {
   SAVE_INTERVAL_MS,
   SUBTITLES_OFF_VALUE,
   buildAudioOptions,
+  buildDashAudioOptions,
+  buildDashQualityOptions,
+  buildDashSubtitleOptions,
+  dashErrorToMediaCode,
   buildHlsQualityOptions,
   buildMp4QualityOptions,
   describeMediaError,
@@ -19,6 +31,7 @@ import {
   nextEpisodeLabel,
   pickDefaultSubtitleIndex,
   pickResumePosition,
+  readDashErrorCode,
   resolveProgressiveUrl,
   tickCountdown,
   type MenuOption,
@@ -45,7 +58,7 @@ const OVERLAY_BUTTON_CLASS =
   "rounded-md bg-white/15 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-white/25 focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none";
 
 interface AdaptivePlayerProps {
-  /** Only "direct" (progressive MP4/WebM) and "hls" sources are played here. */
+  /** "direct" (progressive MP4/WebM), "hls" and "dash" sources are played here. */
   source: PlaybackSource;
   /** When set, progress and history are saved against it. */
   target?: WatchTarget;
@@ -133,11 +146,12 @@ export function AttributionNote({ attribution }: { attribution?: PlaybackAttribu
 }
 
 /**
- * Plays "direct" (MP4/WebM) and "hls" sources in a native <video> and adds what
- * the native controls lack: a settings menu (quality, audio, subtitles), a
- * loading indicator, an error overlay with retry, resume, progress/history and
- * a "next episode" countdown. HLS uses the browser's own support when it has
- * it (Safari/iOS) and hls.js otherwise, loaded only when needed.
+ * Plays "direct" (MP4/WebM), "hls" and "dash" sources in a native <video> and
+ * adds what the native controls lack: a settings menu (quality, audio,
+ * subtitles), a loading indicator, an error overlay with retry, resume,
+ * progress/history and a "next episode" countdown. HLS uses the browser's own
+ * support when it has it (Safari/iOS) and hls.js otherwise; DASH uses dash.js.
+ * Both libraries are loaded only when a source needs them.
  */
 export function AdaptivePlayer({
   source,
@@ -151,6 +165,8 @@ export function AdaptivePlayer({
   const panelId = useId();
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const dashRef = useRef<DashPlayerLike | null>(null);
+  const dashRepresentationsRef = useRef<DashRepresentationWithId[]>([]);
   const panelRef = useRef<HTMLDivElement>(null);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const lastSavedAtRef = useRef(0);
@@ -163,6 +179,7 @@ export function AdaptivePlayer({
     getServerNativeHlsSupport,
   );
   const viaHlsJs = source.type === "hls" && !nativeHls;
+  const viaDash = source.type === "dash";
 
   // Bumped by "Tentar de novo": remounts the <video> and restarts hls.js.
   const [attempt, setAttempt] = useState(0);
@@ -174,6 +191,7 @@ export function AdaptivePlayer({
   const [mp4Quality, setMp4Quality] = useState(0);
   const [audioOptions, setAudioOptions] = useState<MenuOption[]>([]);
   const [audioValue, setAudioValue] = useState(0);
+  const [dashSubtitleOptions, setDashSubtitleOptions] = useState<MenuOption[]>([]);
   const [subtitleValue, setSubtitleValue] = useState(() =>
     pickDefaultSubtitleIndex(source.subtitles),
   );
@@ -192,17 +210,25 @@ export function AdaptivePlayer({
     [subtitles],
   );
 
-  const qualityOptions = viaHlsJs
+  const isAdaptiveJs = viaHlsJs || viaDash;
+  const qualityOptions = isAdaptiveJs
     ? hlsQualityOptions
     : source.type === "direct"
       ? mp4QualityOptions
       : [];
-  const qualityValue = viaHlsJs ? hlsQuality : mp4Quality;
+  const qualityValue = isAdaptiveJs ? hlsQuality : mp4Quality;
+  // Text tracks embedded in a DASH stream stand in when the source lists none.
+  const menuSubtitleOptions =
+    viaDash && subtitles.length === 0 ? dashSubtitleOptions : subtitleOptions;
+  const hasSubtitleChoice =
+    viaDash && subtitles.length === 0
+      ? dashSubtitleOptions.length > 0
+      : subtitles.length > 0;
   const hasSettings =
-    qualityOptions.length > 0 || audioOptions.length > 0 || subtitles.length > 0;
+    qualityOptions.length > 0 || audioOptions.length > 0 || hasSubtitleChoice;
 
-  // "hls" without hls.js is attached by the effect below, so it has no src.
-  const videoSrc = viaHlsJs
+  // "hls" via hls.js and "dash" are attached by the effects below, so they have no src.
+  const videoSrc = viaHlsJs || viaDash
     ? undefined
     : source.type === "direct"
       ? resolveProgressiveUrl(source.url, source.qualities, mp4Quality)
@@ -316,6 +342,102 @@ export function AdaptivePlayer({
     };
   }, [viaHlsJs, source.url, attempt]);
 
+  // dash.js: loaded on demand, one instance per (source, attempt), always destroyed.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!viaDash || !video) {
+      return;
+    }
+
+    let disposed = false;
+    let player: DashPlayerLike | null = null;
+
+    createDashPlayer()
+      .then((instance) => {
+        if (disposed) {
+          disposeDashPlayer(instance);
+          return;
+        }
+        player = instance;
+        dashRef.current = instance;
+
+        // A retry / quality change keeps the position it was at; otherwise the
+        // saved progress is the start (dash.js needs it at initialize time).
+        const pending = pendingSeekRef.current;
+        const startTime = pending?.time ?? (resumeAt > 0 ? resumeAt : undefined);
+
+        function refreshMenus() {
+          const representations = listDashRepresentations(instance);
+          dashRepresentationsRef.current = representations;
+          setHlsQualityOptions(buildDashQualityOptions(representations));
+          const audioTracks = instance.getTracksFor?.("audio") ?? [];
+          setAudioOptions(buildDashAudioOptions(audioTracks));
+          const currentAudio = instance.getCurrentTrackFor?.("audio");
+          setAudioValue(Math.max(0, currentAudio ? audioTracks.indexOf(currentAudio) : 0));
+          setDashSubtitleOptions(
+            buildDashSubtitleOptions(instance.getTracksFor?.("text") ?? []),
+          );
+        }
+
+        instance.on("streamInitialized", () => {
+          setHlsQuality(AUTO_QUALITY_VALUE);
+          refreshMenus();
+          // Same rule as the other players: no resume inside the credits.
+          const duration = instance.duration?.() ?? Number.NaN;
+          if (
+            (pending?.time ?? null) === null &&
+            resumeAt > 0 &&
+            Number.isFinite(duration) &&
+            pickResumePosition(resumeAt, duration) === null
+          ) {
+            instance.seek?.(0);
+          }
+        });
+        instance.on("allTextTracksAdded", refreshMenus);
+
+        function fail(event: unknown) {
+          if (disposed) {
+            return;
+          }
+          setLoading(false);
+          const code = dashErrorToMediaCode(readDashErrorCode(event));
+          setErrorMessage(describeMediaError(code));
+          // Stop downloading; the retry button mounts a fresh instance.
+          disposeDashPlayer(instance);
+          dashRef.current = null;
+          player = null;
+        }
+        instance.on("error", fail);
+        instance.on("playbackError", fail);
+
+        instance.updateSettings({
+          streaming: {
+            abr: { autoSwitchBitrate: { video: true } },
+            // The subtitle menu decides what is shown.
+            text: { defaultEnabled: false },
+          },
+        });
+        const shouldPlay = autoPlay || pending?.play === true;
+        instance.initialize(video, source.url, shouldPlay, startTime);
+      })
+      .catch(() => {
+        if (!disposed) {
+          setErrorMessage("Não foi possível carregar o player de vídeo.");
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      disposed = true;
+      dashRef.current = null;
+      dashRepresentationsRef.current = [];
+      if (player) {
+        disposeDashPlayer(player);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- resumeAt/autoPlay only matter when a new instance starts
+  }, [viaDash, source.url, attempt]);
+
   // Subtitle choice -> <track> modes (the nodes are re-created on each attempt).
   useEffect(() => {
     const tracks = videoRef.current?.querySelectorAll("track");
@@ -366,6 +488,16 @@ export function AdaptivePlayer({
   }, [countdown, nextHref, router]);
 
   function handleSelectQuality(value: number) {
+    if (viaDash) {
+      const dash = dashRef.current;
+      if (dash) {
+        const index = value === AUTO_QUALITY_VALUE ? null : value;
+        selectDashRepresentation(dash, dashRepresentationsRef.current, index);
+      }
+      setHlsQuality(value);
+      return;
+    }
+
     if (viaHlsJs) {
       const hls = hlsRef.current;
       if (hls) {
@@ -389,11 +521,31 @@ export function AdaptivePlayer({
   }
 
   function handleSelectAudio(value: number) {
+    const dash = dashRef.current;
+    if (dash) {
+      const track = dash.getTracksFor?.("audio")[value];
+      if (track) {
+        dash.setCurrentTrack?.(track);
+      }
+    }
     const hls = hlsRef.current;
     if (hls) {
       hls.audioTrack = value;
     }
     setAudioValue(value);
+  }
+
+  function handleSelectSubtitle(value: number) {
+    const dash = dashRef.current;
+    if (dash && subtitles.length === 0) {
+      if (value === SUBTITLES_OFF_VALUE) {
+        dash.enableText?.(false);
+      } else {
+        dash.enableText?.(true);
+        dash.setTextTrack?.(value);
+      }
+    }
+    setSubtitleValue(value);
   }
 
   function handleRetry() {
@@ -406,6 +558,7 @@ export function AdaptivePlayer({
     setLoading(true);
     setHlsQualityOptions([]);
     setAudioOptions([]);
+    setDashSubtitleOptions([]);
     setAttempt((value) => value + 1);
   }
 
@@ -551,12 +704,12 @@ export function AdaptivePlayer({
                   onSelect={handleSelectAudio}
                 />
               )}
-              {subtitles.length > 0 && (
+              {hasSubtitleChoice && (
                 <MenuSection
                   title="Legendas"
-                  options={subtitleOptions}
+                  options={menuSubtitleOptions}
                   value={subtitleValue}
-                  onSelect={setSubtitleValue}
+                  onSelect={handleSelectSubtitle}
                 />
               )}
             </div>

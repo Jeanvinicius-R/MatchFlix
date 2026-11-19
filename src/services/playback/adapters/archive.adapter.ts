@@ -3,8 +3,11 @@ import {
   defaultFetch,
   fetchJson,
   isRecord,
+  readRecord,
   type AdapterFailure,
+  type DiscoveryQuery,
   type PlaybackAdapter,
+  type ProviderCandidate,
   type ResolvedAsset,
 } from "./adapter.types";
 
@@ -209,6 +212,101 @@ function findRestriction(
   return null;
 }
 
+
+/** Rows asked from advancedsearch: enough for a title, small enough to stay polite. */
+const DISCOVER_ROWS = 15;
+const MAX_DISCOVER_RESULTS = 8;
+
+/** Fields the search asks for; "date" is the fallback for a missing "year". */
+const DISCOVER_FIELDS = ["identifier", "title", "year", "date", "licenseurl", "runtime"];
+
+/** Text safe to place between quotes of a Lucene phrase query. */
+function toPhrase(title: string): string {
+  return title
+    .replace(/["\]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+}
+
+/** "01:29:55", "9:56", "596.5" or "596" (seconds) -> minutes, else undefined. */
+function parseRuntimeMinutes(value: unknown): number | undefined {
+  const raw = toStringList(value)[0]?.trim();
+
+  if (!raw) {
+    return undefined;
+  }
+
+  let seconds: number;
+
+  if (raw.includes(":")) {
+    const parts = raw.split(":").map(Number);
+
+    if (
+      parts.length > 3 ||
+      parts.some((part) => !Number.isFinite(part) || part < 0)
+    ) {
+      return undefined;
+    }
+
+    seconds = parts.reduce((total, part) => total * 60 + part, 0);
+  } else {
+    seconds = Number(raw);
+  }
+
+  return Number.isFinite(seconds) && seconds > 0 ? seconds / 60 : undefined;
+}
+
+function parseYear(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    const match = /^\s*(\d{4})/.exec(toStringList(value)[0] ?? "");
+    const year = match ? Number(match[1]) : NaN;
+
+    if (year >= 1850 && year <= 2200) {
+      return year;
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Turns one advancedsearch document into a suggestion, or null when it is not an
+ * openly licensed movie. Only a SUGGESTION: resolve() re-checks the full gate.
+ * Archive items declare no TMDB/IMDb id we trust (the field is free text typed by
+ * the uploader), so the matcher can only score them by title + year (+ runtime).
+ */
+function toDiscoveredCandidate(doc: unknown): ProviderCandidate | null {
+  if (!isRecord(doc)) {
+    return null;
+  }
+
+  const identifier = typeof doc.identifier === "string" ? doc.identifier.trim() : "";
+  const title = toStringList(doc.title)[0]?.trim() ?? "";
+  const licenseUrl = typeof doc.licenseurl === "string" ? doc.licenseurl : "";
+
+  if (!IDENTIFIER_PATTERN.test(identifier) || title === "" || !parseAllowedLicense(licenseUrl)) {
+    return null;
+  }
+
+  const candidate: ProviderCandidate = {
+    providerAssetId: identifier,
+    title: title.slice(0, 300),
+  };
+  const year = parseYear(doc.year, doc.date);
+  const minutes = parseRuntimeMinutes(doc.runtime);
+
+  if (year !== undefined) {
+    candidate.year = year;
+  }
+
+  if (minutes !== undefined) {
+    candidate.durationMinutes = minutes;
+  }
+
+  return candidate;
+}
+
 export interface ArchiveAdapterOptions {
   fetchImpl?: typeof fetch;
 }
@@ -221,6 +319,79 @@ export function createArchiveAdapter(options: ArchiveAdapterOptions = {}): Playb
     label: "Internet Archive",
     assetIdHint:
       'Identificador do item, a parte final de archive.org/details/<identificador> (ex.: "BigBuckBunny_124").',
+
+    /**
+     * Title search (advancedsearch). Episodes are not supported: the Archive has
+     * no episode-level metadata we could match, so EPISODE queries return [].
+     * Only items whose licenseurl is on the allowlist are suggested.
+     */
+    async discover(
+      query: DiscoveryQuery,
+      { signal },
+    ): Promise<ProviderCandidate[] | AdapterFailure> {
+      if (query.mediaType !== "MOVIE") {
+        return [];
+      }
+
+      const phrases = Array.from(
+        new Set(
+          [query.title, query.originalTitle]
+            .map((title) => toPhrase(title ?? ""))
+            .filter((phrase) => phrase !== ""),
+        ),
+      );
+
+      if (phrases.length === 0) {
+        return [];
+      }
+
+      const titleClause = phrases.map((phrase) => `title:("${phrase}")`).join(" OR ");
+      const params = new URLSearchParams();
+
+      params.set("q", `(${titleClause}) AND mediatype:movies`);
+
+      for (const field of DISCOVER_FIELDS) {
+        params.append("fl[]", field);
+      }
+
+      params.set("rows", String(DISCOVER_ROWS));
+      params.set("output", "json");
+
+      const result = await fetchJson<unknown>(
+        fetchImpl,
+        `${ARCHIVE_BASE_URL}/advancedsearch.php?${params.toString()}`,
+        { signal, what: "a busca do Internet Archive", allowedHost: isArchiveHost },
+      );
+
+      if (!result.ok) {
+        return { reason: result.reason };
+      }
+
+      const body = result.data;
+      const docs = isRecord(body) ? readRecord(body, "response").docs : undefined;
+
+      if (!Array.isArray(docs)) {
+        return { reason: "A busca do Internet Archive devolveu uma resposta inválida." };
+      }
+
+      const candidates: ProviderCandidate[] = [];
+      const seen = new Set<string>();
+
+      for (const doc of docs as unknown[]) {
+        const candidate = toDiscoveredCandidate(doc);
+
+        if (candidate && !seen.has(candidate.providerAssetId)) {
+          seen.add(candidate.providerAssetId);
+          candidates.push(candidate);
+        }
+
+        if (candidates.length >= MAX_DISCOVER_RESULTS) {
+          break;
+        }
+      }
+
+      return candidates;
+    },
 
     async resolve(assetId, { signal }): Promise<ResolvedAsset | AdapterFailure> {
       const identifier = assetId.trim();

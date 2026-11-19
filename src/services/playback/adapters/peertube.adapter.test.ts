@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { isAdapterFailure } from "./adapter.types";
+import {
+  isAdapterFailure,
+  type DiscoveryQuery,
+  type PlaybackAdapter,
+} from "./adapter.types";
 import {
   createPeerTubeAdapter,
   parsePeerTubeAssetId,
@@ -461,5 +465,172 @@ describe("createPeerTubeAdapter: remote failures", () => {
     assert.equal(adapter.id, "peertube");
     assert.ok(adapter.label.length > 0);
     assert.match(adapter.assetIdHint, /PEERTUBE_ALLOWED_INSTANCES/);
+  });
+});
+
+const FILM_QUERY: DiscoveryQuery = {
+  tmdbId: 10378,
+  mediaType: "MOVIE",
+  seasonNumber: 0,
+  episodeNumber: 0,
+  title: "Sintel",
+  originalTitle: "Sintel",
+  year: 2010,
+  runtimeMinutes: 15,
+};
+
+function hit(overrides: Record<string, unknown> = {}) {
+  return {
+    uuid: UUID,
+    name: "Sintel",
+    duration: 888,
+    isLive: false,
+    isLocal: true,
+    licence: { id: 1, label: "Attribution" },
+    originallyPublishedAt: "2010-09-27T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+async function discoverWith(adapter: PlaybackAdapter, query: DiscoveryQuery) {
+  assert.ok(adapter.discover, "the adapter should implement discover()");
+  return adapter.discover(query, signal());
+}
+
+describe("peertube adapter discover()", () => {
+  it("searches the allowlisted instance with licence, live and duration filters", async () => {
+    const calls: string[] = [];
+    const impl = (async (input: string | URL | Request) => {
+      calls.push(String(input));
+      return json({ total: 1, data: [hit()] });
+    }) as typeof fetch;
+    const adapter = createPeerTubeAdapter({ fetchImpl: impl, allowedInstances: [HOST] });
+    const result = await discoverWith(adapter, FILM_QUERY);
+
+    assert.ok(Array.isArray(result));
+    assert.deepEqual(result, [
+      { providerAssetId: ASSET_ID, title: "Sintel", year: 2010, durationMinutes: 888 / 60 },
+    ]);
+    assert.equal(calls.length, 1);
+
+    const url = new URL(calls[0]);
+    assert.equal(url.origin + url.pathname, `https://${HOST}/api/v1/search/videos`);
+    assert.equal(url.searchParams.get("search"), "Sintel");
+    assert.equal(url.searchParams.get("isLive"), "false");
+    assert.deepEqual(url.searchParams.getAll("licenceOneOf").sort(), ["1", "2", "3", "7", "8"]);
+    // 70% of 15 min = 630 s
+    assert.equal(url.searchParams.get("durationMin"), "630");
+  });
+
+  it("drops live, remote, forbidden-licence and malformed hits", async () => {
+    const impl = (async () =>
+      json({
+        data: [
+          hit({ uuid: "a1", name: "ok" }),
+          hit({ uuid: "a2", isLive: true }),
+          hit({ uuid: "a3", isLocal: false }),
+          hit({ uuid: "a4", licence: { id: 4, label: "Attribution - Non Commercial" } }),
+          hit({ uuid: "a5", licence: undefined }),
+          hit({ uuid: "bad id with spaces" }),
+          hit({ uuid: "a6", name: "" }),
+          "garbage",
+        ],
+      })) as typeof fetch;
+    const adapter = createPeerTubeAdapter({ fetchImpl: impl, allowedInstances: [HOST] });
+    const result = await discoverWith(adapter, FILM_QUERY);
+
+    assert.ok(Array.isArray(result));
+    assert.deepEqual(
+      result.map((candidate) => candidate.providerAssetId),
+      [`${HOST}/a1`],
+    );
+  });
+
+  it("takes the year from the original date, then from the title, never from the upload", async () => {
+    const impl = (async () =>
+      json({
+        data: [
+          hit({ uuid: "b1", originallyPublishedAt: null, name: "Sintel (2010)" }),
+          hit({ uuid: "b2", originallyPublishedAt: null, publishedAt: "2024-01-01T00:00:00Z" }),
+        ],
+      })) as typeof fetch;
+    const adapter = createPeerTubeAdapter({ fetchImpl: impl, allowedInstances: [HOST] });
+    const result = await discoverWith(adapter, FILM_QUERY);
+
+    assert.ok(Array.isArray(result));
+    assert.equal(result[0].year, 2010);
+    assert.equal(result[1].year, undefined);
+  });
+
+  it("omits durationMin without a runtime and searches both titles", async () => {
+    const calls: string[] = [];
+    const impl = (async (input: string | URL | Request) => {
+      calls.push(String(input));
+      return json({ data: [] });
+    }) as typeof fetch;
+    const adapter = createPeerTubeAdapter({ fetchImpl: impl, allowedInstances: [HOST] });
+    const result = await discoverWith(adapter, {
+      ...FILM_QUERY,
+      title: "Sintel PT",
+      runtimeMinutes: undefined,
+    });
+
+    assert.deepEqual(result, []);
+    assert.equal(calls.length, 2);
+    assert.equal(new URL(calls[0]).searchParams.get("durationMin"), null);
+    assert.deepEqual(
+      calls.map((call) => new URL(call).searchParams.get("search")).sort(),
+      ["Sintel", "Sintel PT"],
+    );
+  });
+
+  it("merges instances, de-duplicates and tolerates one instance failing", async () => {
+    const impl = (async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+
+      if (url.host === "down.example.org") {
+        return new Response("boom", { status: 500 });
+      }
+
+      return json({ data: [hit(), hit()] });
+    }) as typeof fetch;
+    const adapter = createPeerTubeAdapter({
+      fetchImpl: impl,
+      allowedInstances: [HOST, "down.example.org"],
+    });
+    const result = await discoverWith(adapter, FILM_QUERY);
+
+    assert.ok(Array.isArray(result));
+    assert.equal(result.length, 1);
+  });
+
+  it("reports a failure when every search fails", async () => {
+    const impl = (async () => new Response("boom", { status: 502 })) as typeof fetch;
+    const adapter = createPeerTubeAdapter({ fetchImpl: impl, allowedInstances: [HOST] });
+    const result = await discoverWith(adapter, FILM_QUERY);
+
+    assert.ok(!Array.isArray(result));
+    assert.match(result.reason, /HTTP 502/);
+  });
+
+  it("does not search for episodes and makes no request when the adapter is off", async () => {
+    const calls: string[] = [];
+    const impl = (async (input: string | URL | Request) => {
+      calls.push(String(input));
+      return json({ data: [] });
+    }) as typeof fetch;
+    const on = createPeerTubeAdapter({ fetchImpl: impl, allowedInstances: [HOST] });
+    const off = createPeerTubeAdapter({ fetchImpl: impl, allowedInstances: [] });
+
+    assert.deepEqual(
+      await discoverWith(on, { ...FILM_QUERY, mediaType: "EPISODE", seasonNumber: 1, episodeNumber: 1 }),
+      [],
+    );
+
+    const disabled = await discoverWith(off, FILM_QUERY);
+
+    assert.ok(!Array.isArray(disabled));
+    assert.match(disabled.reason, /desativado/);
+    assert.equal(calls.length, 0);
   });
 });

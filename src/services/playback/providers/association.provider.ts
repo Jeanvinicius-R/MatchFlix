@@ -4,6 +4,7 @@ import type {
   PlaybackProvider,
   PlaybackSource,
 } from "../playback.types";
+import { buildProxyUrl, mintProxyToken } from "../proxy/proxy-token";
 import { describeSourceProblem, sanitizeSource } from "../source-guard";
 
 /**
@@ -15,6 +16,10 @@ import { describeSourceProblem, sanitizeSource } from "../source-guard";
  *   - no association, or UNVERIFIED / EXPIRED / REVOKED rights => never touched;
  *   - availability UNAVAILABLE (last check failed) => skipped;
  *   - adapter refuses, throws, times out or returns an unsafe URL => skipped.
+ *
+ * Media the browser must not contact directly (the adapter answers with `proxy`)
+ * becomes an encrypted same-origin `/api/playback/proxy/<token>` URL bound to
+ * the signed-in user; without a user (or without AUTH_SECRET) it is skipped.
  */
 
 export interface AssociationCandidateQuery {
@@ -57,6 +62,7 @@ export function createAssociationProvider(
 
   async function resolveCandidates(
     query: AssociationCandidateQuery,
+    viewerId: string | undefined,
   ): Promise<PlaybackSource | null> {
     let candidates: AssociationCandidate[];
 
@@ -91,11 +97,44 @@ export function createAssociationProvider(
           continue;
         }
 
+        let url: string;
+
+        if (result.proxy !== undefined) {
+          // Media the browser must not contact: serve it through the encrypted,
+          // per-user proxy token. Without a signed-in user there is no token.
+          if (!viewerId) {
+            console.warn(
+              `Playback "${adapter.id}": fonte protegida sem usuário (${candidate.id}).`,
+            );
+            continue;
+          }
+
+          try {
+            url = buildProxyUrl(
+              mintProxyToken({
+                upstreamUrl: result.proxy.upstreamUrl,
+                headers: result.proxy.headers,
+                allowedOrigins: result.proxy.allowedOrigins,
+                userId: viewerId,
+              }),
+            );
+          } catch (error) {
+            // The message never carries the upstream URL or any credential.
+            console.warn(
+              `Playback "${adapter.id}": proxy indisponível (${candidate.id}):`,
+              error instanceof Error ? error.message : "erro desconhecido",
+            );
+            continue;
+          }
+        } else {
+          url = result.url;
+        }
+
         const source: PlaybackSource = {
           id: `${adapter.id}-${candidate.id}`,
           provider: adapter.id,
           type: result.type,
-          url: result.url,
+          url,
           label: result.label ?? adapter.label,
         };
 
@@ -142,13 +181,16 @@ export function createAssociationProvider(
         return Promise.resolve(null);
       }
 
-      return resolveCandidates({
-        tmdbId: context.tmdbId,
-        mediaType: "MOVIE",
-        seasonNumber: 0,
-        episodeNumber: 0,
-        provider: adapter.id,
-      });
+      return resolveCandidates(
+        {
+          tmdbId: context.tmdbId,
+          mediaType: "MOVIE",
+          seasonNumber: 0,
+          episodeNumber: 0,
+          provider: adapter.id,
+        },
+        context.viewerId,
+      );
     },
 
     getEpisodeSource(context: PlaybackContext) {
@@ -167,13 +209,16 @@ export function createAssociationProvider(
         return Promise.resolve(null);
       }
 
-      return resolveCandidates({
-        tmdbId,
-        mediaType: "EPISODE",
-        seasonNumber: season,
-        episodeNumber: episode,
-        provider: adapter.id,
-      });
+      return resolveCandidates(
+        {
+          tmdbId,
+          mediaType: "EPISODE",
+          seasonNumber: season,
+          episodeNumber: episode,
+          provider: adapter.id,
+        },
+        context.viewerId,
+      );
     },
   };
 }
