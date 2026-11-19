@@ -212,7 +212,6 @@ function findRestriction(
   return null;
 }
 
-
 /** Rows asked from advancedsearch: enough for a title, small enough to stay polite. */
 const DISCOVER_ROWS = 15;
 const MAX_DISCOVER_RESULTS = 8;
@@ -223,7 +222,7 @@ const DISCOVER_FIELDS = ["identifier", "title", "year", "date", "licenseurl", "r
 /** Text safe to place between quotes of a Lucene phrase query. */
 function toPhrase(title: string): string {
   return title
-    .replace(/["\]/g, " ")
+    .replace(/["\\]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 120);
