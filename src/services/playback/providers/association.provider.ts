@@ -157,6 +157,10 @@ export function createAssociationProvider(
           source.attribution = result.attribution;
         }
 
+        if (result.sandbox !== undefined) {
+          source.sandbox = result.sandbox;
+        }
+
         const safe = sanitizeSource(source);
 
         if (safe) {

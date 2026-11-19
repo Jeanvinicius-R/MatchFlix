@@ -6,8 +6,15 @@ import type { PlaybackSource } from "../playback.types";
  */
 export type ResolvedAssetBase = Pick<
   PlaybackSource,
-  "type" | "mimeType" | "qualities" | "subtitles" | "attribution" | "label"
->;
+  "type" | "mimeType" | "qualities" | "subtitles" | "attribution" | "label" | "sandbox"
+> & {
+  /**
+   * true = the URL was CONSTRUCTED from identifiers (EMBED providers): at most
+   * the page was seen answering, never that the video exists and plays. Such an
+   * association stays "unknown" instead of "confirmed" after a check.
+   */
+  unconfirmed?: boolean;
+};
 
 /**
  * Media the BROWSER must never contact directly: the upstream URL carries
@@ -87,6 +94,30 @@ export interface AdapterFailure {
 
 export interface AdapterResolveOptions {
   signal: AbortSignal;
+  /**
+   * "verify" = an admin/cron availability check: adapters may spend a network
+   * round-trip to confirm the asset. Absent/"play" = a viewer is waiting, keep
+   * it cheap.
+   */
+  purpose?: "play" | "verify";
+}
+
+export interface DeriveAssetIdInput {
+  tmdbId: number;
+  /** TMDB external_ids of the movie (or of the SERIES for an episode). */
+  imdbId?: string;
+  mediaType: "MOVIE" | "EPISODE";
+  seasonNumber: number;
+  episodeNumber: number;
+}
+
+export interface AdapterDescriptor {
+  /** "embed", "xtream", "m3u", "files", "rest". */
+  kind: string;
+  /** false = switched off in the configuration: nothing is offered to viewers. */
+  enabled: boolean;
+  /** Short lines for the admin ("Origem: https://…", "Filme: /embed/movie/{tmdbId}"). */
+  details: string[];
 }
 
 /**
@@ -112,6 +143,19 @@ export interface PlaybackAdapter {
    * for the admin UI; the proxy decision itself travels in the proxy token.
    */
   allowPrivateNetwork?: boolean;
+  /**
+   * Secret-free description for the admin screen (kind, on/off, where it
+   * points). Only set by configured servers.
+   */
+  descriptor?: AdapterDescriptor;
+  /**
+   * Optional: providers whose ids ARE the TMDB/IMDb ids (EMBED) can derive the
+   * asset id from the title instead of the admin typing it. Never from a name:
+   * `imdbId` must come from TMDB's external_ids endpoint.
+   */
+  deriveAssetId?(input: DeriveAssetIdInput): string | AdapterFailure;
+  /** True when deriveAssetId needs the IMDb id (the caller then asks TMDB for it). */
+  requiresImdbId?: boolean;
   resolve(
     assetId: string,
     options: AdapterResolveOptions,

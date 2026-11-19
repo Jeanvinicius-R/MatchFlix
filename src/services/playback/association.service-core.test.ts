@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import type { CreateAssociationInput } from "../../schemas/playback-association.schemas";
 import type { AdapterFailure, PlaybackAdapter, ResolvedAsset } from "./adapters/adapter.types";
 import {
+  AssetIdDerivationError,
   AssociationAlreadyExistsError,
   AssociationNotFoundError,
   LicenseReferenceRequiredError,
@@ -630,5 +631,141 @@ describe("error classes", () => {
       assert.equal(error.name, error.constructor.name);
       assert.ok(error.message.length > 0);
     }
+  });
+});
+
+describe("EMBED providers (constructed URLs)", () => {
+  const EMBED_ASSET: ResolvedAsset = {
+    type: "iframe",
+    url: "https://player.example.com/embed/movie/550",
+    sandbox: true,
+    unconfirmed: true,
+  };
+
+  function embedAdapter(overrides: Partial<PlaybackAdapter> = {}): PlaybackAdapter {
+    return {
+      id: "player-externo",
+      label: "Player Externo",
+      assetIdHint: "ID do TMDB",
+      requiresImdbId: false,
+      deriveAssetId: (input) =>
+        input.mediaType === "EPISODE"
+          ? `${input.tmdbId}/${input.seasonNumber}/${input.episodeNumber}`
+          : String(input.tmdbId),
+      resolve: async () => EMBED_ASSET,
+      ...overrides,
+    };
+  }
+
+  const FIGHT_CLUB: CreateAssociationInput = {
+    tmdbId: 550,
+    mediaType: "MOVIE",
+    seasonNumber: 0,
+    episodeNumber: 0,
+    provider: "player-externo",
+    providerAssetId: "auto",
+  };
+
+  it("a passing check leaves the association UNKNOWN, never AVAILABLE", async () => {
+    const purposes: Array<string | undefined> = [];
+    const { service, rows } = setup([
+      embedAdapter({
+        resolve: async (_assetId, options) => {
+          purposes.push(options.purpose);
+          return EMBED_ASSET;
+        },
+      }),
+    ]);
+    const created = await service.createAssociation(FIGHT_CLUB);
+    const result = await service.verifyAssociation(created.id);
+
+    assert.equal(result.availabilityStatus, "UNKNOWN");
+    assert.match(result.reason ?? "", /n[ãa]o permite confirmar/);
+    assert.equal(rows.get(created.id)?.availabilityStatus, "UNKNOWN");
+    assert.equal(rows.get(created.id)?.lastVerifiedAt?.getTime(), NOW.getTime());
+    assert.deepEqual(purposes, ["verify"]);
+  });
+
+  it("a failing check (page missing / framing blocked) is UNAVAILABLE", async () => {
+    const { service, rows } = setup([
+      embedAdapter({ resolve: async () => ({ reason: "O provedor proíbe incorporar o player." }) }),
+    ]);
+    const created = await service.createAssociation(FIGHT_CLUB);
+    const result = await service.verifyAssociation(created.id);
+
+    assert.equal(result.availabilityStatus, "UNAVAILABLE");
+    assert.equal(rows.get(created.id)?.availabilityStatus, "UNAVAILABLE");
+  });
+
+  it('"auto" derives the TMDB id for movies and episodes', async () => {
+    const { service } = setup([embedAdapter()]);
+    const movie = await service.createAssociation(FIGHT_CLUB);
+    const episode = await service.createAssociation({
+      ...FIGHT_CLUB,
+      tmdbId: 1399,
+      mediaType: "EPISODE",
+      seasonNumber: 1,
+      episodeNumber: 2,
+    });
+
+    assert.equal(movie.providerAssetId, "550");
+    assert.equal(episode.providerAssetId, "1399/1/2");
+    assert.equal(movie.rightsStatus, "UNVERIFIED");
+  });
+
+  it('"auto" asks TMDB (external_ids) for the IMDb id, never searches by name', async () => {
+    const lookups: Array<[number, string]> = [];
+    const memory = memoryRepository();
+    const service = createAssociationService({
+      repository: memory.repository,
+      adapters: [
+        embedAdapter({
+          requiresImdbId: true,
+          deriveAssetId: (input) => input.imdbId ?? { reason: "Sem IMDb ID no TMDB." },
+        }),
+      ],
+      now: () => NOW,
+      lookupImdbId: async (tmdbId, mediaType) => {
+        lookups.push([tmdbId, mediaType]);
+        return tmdbId === 550 ? "tt0137523" : null;
+      },
+    });
+
+    assert.equal((await service.createAssociation(FIGHT_CLUB)).providerAssetId, "tt0137523");
+    assert.deepEqual(lookups, [[550, "MOVIE"]]);
+
+    await assert.rejects(
+      service.createAssociation({ ...FIGHT_CLUB, tmdbId: 99999999 }),
+      (error: unknown) => error instanceof AssetIdDerivationError && /IMDb/.test(error.message),
+    );
+  });
+
+  it('"auto" fails closed when TMDB is unreachable or the provider cannot derive ids', async () => {
+    const memory = memoryRepository();
+    const broken = createAssociationService({
+      repository: memory.repository,
+      adapters: [embedAdapter({ requiresImdbId: true })],
+      lookupImdbId: async () => {
+        throw new Error("TMDB down");
+      },
+    });
+
+    await assert.rejects(broken.createAssociation(FIGHT_CLUB), AssetIdDerivationError);
+
+    const { service } = setup([fakeAdapter("player-externo")]);
+
+    await assert.rejects(service.createAssociation(FIGHT_CLUB), AssetIdDerivationError);
+  });
+
+  it("exposes the secret-free descriptor to the admin", () => {
+    const { service } = setup([
+      embedAdapter({
+        descriptor: { kind: "embed", enabled: false, details: ["Origem do player: https://player.example.com"] },
+      }),
+    ]);
+    const [info] = service.listAdapters();
+
+    assert.equal(info.descriptor?.kind, "embed");
+    assert.equal(info.descriptor?.enabled, false);
   });
 });

@@ -42,6 +42,12 @@ export interface PlaybackSource {
   qualities?: PlaybackQuality[];
   subtitles?: PlaybackSubtitle[];
   attribution?: PlaybackAttribution;
+  /**
+   * "iframe" only: render the frame with a restrictive `sandbox` (scripts and
+   * same-origin for the player itself, fullscreen; no popups, no top navigation).
+   * Set for external EMBED providers.
+   */
+  sandbox?: boolean;
 }
 
 export interface PlaybackContext {

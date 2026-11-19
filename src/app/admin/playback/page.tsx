@@ -104,9 +104,29 @@ export default async function AdminPlaybackPage() {
                   ({adapter.id})
                 </span>
               </p>
+              {adapter.descriptor ? (
+                <div className="text-muted-foreground text-xs break-words">
+                  <p>
+                    Tipo: <strong>{adapter.descriptor.kind}</strong> ·{" "}
+                    {adapter.descriptor.enabled ? (
+                      <span>habilitado</span>
+                    ) : (
+                      <strong>desabilitado na configuração (nada é oferecido)</strong>
+                    )}
+                  </p>
+                  {adapter.descriptor.details.map((line) => (
+                    <p key={line}>{line}</p>
+                  ))}
+                </div>
+              ) : null}
               <p className="text-muted-foreground text-xs">
                 {describeSync(adapter)}
               </p>
+              {adapter.assetIdHint ? (
+                <p className="text-muted-foreground text-xs break-words">
+                  Formato do ID: {adapter.assetIdHint}
+                </p>
+              ) : null}
               <p className="text-muted-foreground text-xs break-words">
                 {adapter.suggestedLicenseReference
                   ? `Licença de acervo configurada (só serve para aprovar em lote o que ela realmente cobre): ${adapter.suggestedLicenseReference}`

@@ -370,9 +370,10 @@ export function createCandidateService(deps: CandidateServiceDeps) {
 
         if (result.availabilityStatus === "AVAILABLE") {
           tally.available += 1;
-        } else {
+        } else if (result.availabilityStatus === "UNAVAILABLE") {
           tally.unavailable += 1;
         }
+        // UNKNOWN (EMBED player URL: reachable, not provable) counts as checked only.
       } catch {
         // Deleted meanwhile, or the store failed: not counted as checked.
       }

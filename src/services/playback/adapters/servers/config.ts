@@ -23,7 +23,7 @@ import { isValidJsonPath } from "./json-path";
  * and also covers its `mediaOrigins`, so with it on they must be trusted hosts.
  */
 
-export type ServerKind = "xtream" | "m3u" | "files" | "rest";
+export type ServerKind = "xtream" | "m3u" | "files" | "rest" | "embed";
 
 export type ServerAuth =
   | { type: "none" }
@@ -84,11 +84,36 @@ export interface RestServerConfig extends ServerConfigBase {
   imdbPath?: string;
 }
 
+/** Which identifier the provider's embed URL is built from. */
+export type EmbedIdentifierType = "tmdb" | "imdb" | "asset";
+
+/**
+ * External player (iframe) of a provider the operator is authorized to embed.
+ * Nothing is fetched from the provider's catalog: the URL is BUILT from the
+ * identifiers of an administrator-approved association, which is why a
+ * constructed URL is never reported as a confirmed video (see embed.adapter.ts).
+ */
+export interface EmbedServerConfig extends ServerConfigBase {
+  kind: "embed";
+  /** false = the provider is switched off: nothing is built, nothing is shown. */
+  enabled: boolean;
+  /** https origin, no path. The only origin the iframe may point at. */
+  baseUrl: string;
+  identifierType: EmbedIdentifierType;
+  /** Path (+ optional query) with {id}, {tmdbId}, {imdbId}. */
+  movieTemplate: string;
+  /** Same plus {season} and {episode}. Absent = the provider has no episodes. */
+  episodeTemplate?: string;
+  /** Sandboxed iframe (default true). */
+  sandbox: boolean;
+}
+
 export type PlaybackServerConfig =
   | XtreamServerConfig
   | M3uServerConfig
   | FilesServerConfig
-  | RestServerConfig;
+  | RestServerConfig
+  | EmbedServerConfig;
 
 /** Ids used by built-in adapters/providers: a configured server can never shadow them. */
 export const RESERVED_SERVER_IDS: ReadonlySet<string> = new Set([
@@ -159,6 +184,36 @@ function pathTemplate(placeholders: readonly string[]) {
     .trim()
     .max(300)
     .refine((value) => isSafePathTemplate(value, placeholders), "caminho inválido");
+}
+
+/** "/embed/movie/{tmdbId}" or "/embed?video_id={id}&tmdb=1": path + optional query, no fragment. */
+function isSafeEmbedTemplate(value: string, placeholders: readonly string[]): boolean {
+  if (
+    !value.startsWith("/") ||
+    value.startsWith("//") ||
+    /[\s\\#]/.test(value) ||
+    value.includes("..") ||
+    value.includes("@")
+  ) {
+    return false;
+  }
+
+  const rest = value.replace(/\{([A-Za-z]+)\}/g, (match: string, name: string) =>
+    placeholders.includes(name) ? "" : match,
+  );
+
+  return !/[{}]/.test(rest);
+}
+
+const MOVIE_PLACEHOLDERS = ["id", "tmdbId", "imdbId"] as const;
+const EPISODE_PLACEHOLDERS = [...MOVIE_PLACEHOLDERS, "season", "episode"] as const;
+
+function embedTemplate(placeholders: readonly string[]) {
+  return z
+    .string()
+    .trim()
+    .max(300)
+    .refine((value) => isSafeEmbedTemplate(value, placeholders), "template inválido");
 }
 
 const secretText = z.string().trim().min(1).max(2000);
@@ -271,6 +326,20 @@ const serverSchema = z.discriminatedUnion("kind", [
     tmdbPath: dotPath.optional(),
     imdbPath: dotPath.optional(),
   }),
+  z.object({
+    ...commonFields,
+    kind: z.literal("embed"),
+    enabled: z.boolean().optional(),
+    baseUrl: z
+      .string()
+      .trim()
+      .refine((v) => isWebUrl(v, { httpsOnly: true, allowQuery: false }), "baseUrl inválida")
+      .refine((v) => new URL(v).pathname === "/", "baseUrl deve ser só a origem"),
+    identifierType: z.enum(["tmdb", "imdb", "asset"]),
+    movieTemplate: embedTemplate(MOVIE_PLACEHOLDERS),
+    episodeTemplate: embedTemplate(EPISODE_PLACEHOLDERS).optional(),
+    sandbox: z.boolean().optional(),
+  }),
 ]);
 
 type RawServer = z.infer<typeof serverSchema>;
@@ -337,6 +406,18 @@ function normalizeOrigins(raw: string[] | undefined): string[] {
   return [...new Set((raw ?? []).map((value) => new URL(value).origin))];
 }
 
+function placeholderFor(type: EmbedIdentifierType): string {
+  return type === "imdb" ? "{imdbId} ou {id}" : type === "tmdb" ? "{tmdbId} ou {id}" : "{id}";
+}
+
+function templateUsesIdentifier(template: string, type: EmbedIdentifierType): boolean {
+  return (
+    template.includes("{id}") ||
+    (type === "tmdb" && template.includes("{tmdbId}")) ||
+    (type === "imdb" && template.includes("{imdbId}"))
+  );
+}
+
 function resolveServer(raw: RawServer, env: Env): PlaybackServerConfig {
   const base = {
     id: raw.id,
@@ -346,6 +427,37 @@ function resolveServer(raw: RawServer, env: Env): PlaybackServerConfig {
   };
 
   switch (raw.kind) {
+    case "embed": {
+      if (!templateUsesIdentifier(raw.movieTemplate, raw.identifierType)) {
+        throw new ServerConfigError(
+          `movieTemplate precisa de ${placeholderFor(raw.identifierType)}`,
+        );
+      }
+
+      if (
+        raw.episodeTemplate !== undefined &&
+        !(
+          templateUsesIdentifier(raw.episodeTemplate, raw.identifierType) &&
+          raw.episodeTemplate.includes("{season}") &&
+          raw.episodeTemplate.includes("{episode}")
+        )
+      ) {
+        throw new ServerConfigError(
+          `episodeTemplate precisa de ${placeholderFor(raw.identifierType)}, {season} e {episode}`,
+        );
+      }
+
+      return {
+        ...base,
+        kind: "embed",
+        enabled: raw.enabled !== false,
+        baseUrl: new URL(raw.baseUrl).origin,
+        identifierType: raw.identifierType,
+        movieTemplate: raw.movieTemplate,
+        episodeTemplate: raw.episodeTemplate,
+        sandbox: raw.sandbox !== false,
+      };
+    }
     case "xtream":
       return {
         ...base,
@@ -575,6 +687,11 @@ function authSecrets(auth: ServerAuth): string[] {
 /** Every secret value of a server (for redaction). */
 export function collectSecrets(config: PlaybackServerConfig): string[] {
   const secrets: string[] = [];
+
+  if (config.kind === "embed") {
+    // No credentials: an iframe URL is public by nature.
+    return secrets;
+  }
 
   if (config.kind === "xtream") {
     secrets.push(config.username, config.password);

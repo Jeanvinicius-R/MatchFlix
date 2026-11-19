@@ -6,7 +6,11 @@ import {
   type PlaybackFormatValue,
   type RightsStatusValue,
 } from "../../schemas/playback-association.schemas";
-import { isAdapterFailure, type PlaybackAdapter } from "./adapters/adapter.types";
+import {
+  isAdapterFailure,
+  type AdapterDescriptor,
+  type PlaybackAdapter,
+} from "./adapters/adapter.types";
 import type { PlaybackSource } from "./playback.types";
 import { describeProxiedMediaProblem, describeSourceProblem } from "./source-guard";
 
@@ -47,6 +51,17 @@ export class UnknownProviderError extends Error {
         : "Provedor desconhecido.",
     );
     this.name = "UnknownProviderError";
+  }
+}
+
+/** The literal an admin types to let an EMBED provider derive the id from the title. */
+export const AUTO_ASSET_ID = "auto";
+
+/** Carries a Portuguese reason that is safe to show the admin. */
+export class AssetIdDerivationError extends Error {
+  constructor(reason: string) {
+    super(reason);
+    this.name = "AssetIdDerivationError";
   }
 }
 
@@ -102,12 +117,28 @@ export interface AssociationServiceDeps {
   now?: () => Date;
   /** Admin-triggered checks may wait longer than a viewer's playback request. */
   verifyTimeoutMs?: number;
+  /**
+   * TMDB external_ids lookup (the movie's, or the SERIES' for an episode), used
+   * only to derive EMBED ids. null = TMDB has no IMDb id for the title.
+   */
+  lookupImdbId?: (tmdbId: number, mediaType: "MOVIE" | "EPISODE") => Promise<string | null>;
 }
 
 export interface VerifyResult {
-  availabilityStatus: "AVAILABLE" | "UNAVAILABLE";
+  /**
+   * UNKNOWN = the check passed but proves nothing about the video itself (EMBED
+   * providers: the iframe URL is built from ids; the page may answer while the
+   * player has no such title). `reason` then explains it.
+   */
+  availabilityStatus: "AVAILABLE" | "UNAVAILABLE" | "UNKNOWN";
   reason?: string;
 }
+
+/** What checkAsset learned: why it is unusable, or whether the check was conclusive. */
+type AssetCheck = { reason: string } | { reason: null; unconfirmed: boolean };
+
+const UNCONFIRMED_REASON =
+  "O endereço do player está acessível e pode ser incorporado, mas o provedor não permite confirmar que este título existe nele: a reprodução só é comprovada ao assistir.";
 
 /** What the admin screens may know about an adapter (nothing secret). */
 export interface AdapterInfo {
@@ -117,6 +148,8 @@ export interface AdapterInfo {
   canDiscover: boolean;
   canListCatalog: boolean;
   suggestedLicenseReference?: string;
+  /** Configured servers only: kind, on/off and what they point at (no secrets). */
+  descriptor?: AdapterDescriptor;
 }
 
 interface OpenFilm {
@@ -175,7 +208,7 @@ const OPEN_FILMS_PROVIDER = "archive";
 const DEFAULT_VERIFY_TIMEOUT_MS = 8_000;
 
 export function createAssociationService(deps: AssociationServiceDeps) {
-  const { repository, adapters } = deps;
+  const { repository, adapters, lookupImdbId } = deps;
   const now = deps.now ?? (() => new Date());
   const verifyTimeoutMs = deps.verifyTimeoutMs ?? DEFAULT_VERIFY_TIMEOUT_MS;
 
@@ -184,20 +217,22 @@ export function createAssociationService(deps: AssociationServiceDeps) {
   }
 
   /** Runs the adapter; any failure becomes a reason instead of an exception. */
-  async function checkAsset(association: AssociationView): Promise<string | null> {
+  async function checkAsset(association: AssociationView): Promise<AssetCheck> {
+    const refused = (reason: string): AssetCheck => ({ reason });
     const adapter = findAdapter(association.provider);
 
     if (!adapter) {
-      return `Provedor desconhecido: "${association.provider}".`;
+      return refused(`Provedor desconhecido: "${association.provider}".`);
     }
 
     try {
       const result = await adapter.resolve(association.providerAssetId, {
         signal: AbortSignal.timeout(verifyTimeoutMs),
+        purpose: "verify",
       });
 
       if (isAdapterFailure(result)) {
-        return result.reason;
+        return refused(result.reason);
       }
 
       // Protected media (credentials stay server-side) has no public URL: the
@@ -205,7 +240,9 @@ export function createAssociationService(deps: AssociationServiceDeps) {
       if (result.proxy !== undefined) {
         const proxyProblem = describeProxiedMediaProblem(result.type, result.proxy);
 
-        return proxyProblem ? `Fonte protegida recusada: ${proxyProblem}.` : null;
+        return proxyProblem
+          ? refused(`Fonte protegida recusada: ${proxyProblem}.`)
+          : { reason: null, unconfirmed: false };
       }
 
       const source: PlaybackSource = {
@@ -216,9 +253,11 @@ export function createAssociationService(deps: AssociationServiceDeps) {
       };
       const problem = describeSourceProblem(source);
 
-      return problem ? `Fonte recusada pela validação de URL: ${problem}.` : null;
+      return problem
+        ? refused(`Fonte recusada pela validação de URL: ${problem}.`)
+        : { reason: null, unconfirmed: result.unconfirmed === true };
     } catch {
-      return "Falha ao consultar o provedor.";
+      return refused("Falha ao consultar o provedor.");
     }
   }
 
@@ -235,8 +274,48 @@ export function createAssociationService(deps: AssociationServiceDeps) {
     async createAssociation(input: CreateAssociationInput): Promise<AssociationView> {
       const data = createAssociationSchema.parse(input);
 
-      if (!findAdapter(data.provider)) {
+      const adapter = findAdapter(data.provider);
+
+      if (!adapter) {
         throw new UnknownProviderError(data.provider);
+      }
+
+      let providerAssetId = data.providerAssetId;
+
+      // "auto": providers whose ids are the TMDB/IMDb ids (EMBED) get the id from
+      // the title itself; the IMDb id comes from TMDB's external_ids, never from a name.
+      if (providerAssetId.toLowerCase() === AUTO_ASSET_ID) {
+        if (!adapter.deriveAssetId) {
+          throw new AssetIdDerivationError(
+            "Este provedor não deriva o identificador sozinho: informe o ID do vídeo.",
+          );
+        }
+
+        let imdbId: string | undefined;
+
+        if (adapter.requiresImdbId) {
+          try {
+            imdbId = (await lookupImdbId?.(data.tmdbId, data.mediaType)) ?? undefined;
+          } catch {
+            throw new AssetIdDerivationError(
+              "Não foi possível consultar o IMDb ID no TMDB agora. Tente novamente.",
+            );
+          }
+        }
+
+        const derived = adapter.deriveAssetId({
+          tmdbId: data.tmdbId,
+          imdbId,
+          mediaType: data.mediaType,
+          seasonNumber: data.seasonNumber,
+          episodeNumber: data.episodeNumber,
+        });
+
+        if (typeof derived !== "string") {
+          throw new AssetIdDerivationError(derived.reason);
+        }
+
+        providerAssetId = derived;
       }
 
       const created = await repository.create({
@@ -245,7 +324,7 @@ export function createAssociationService(deps: AssociationServiceDeps) {
         seasonNumber: data.seasonNumber,
         episodeNumber: data.episodeNumber,
         provider: data.provider,
-        providerAssetId: data.providerAssetId,
+        providerAssetId,
         playbackType: data.playbackType ?? null,
         rightsStatus: "UNVERIFIED",
         licenseReference: data.licenseReference ? data.licenseReference : null,
@@ -314,11 +393,18 @@ export function createAssociationService(deps: AssociationServiceDeps) {
         throw new AssociationNotFoundError();
       }
 
-      const reason = await checkAsset(association);
+      const check = await checkAsset(association);
 
-      if (reason !== null) {
+      if (check.reason !== null) {
         await repository.updateAvailability(id, "UNAVAILABLE", now());
-        return { availabilityStatus: "UNAVAILABLE", reason };
+        return { availabilityStatus: "UNAVAILABLE", reason: check.reason };
+      }
+
+      if (check.unconfirmed) {
+        // A constructed URL is never "confirmed": it stays unknown (and the
+        // playback still offers it, since only UNAVAILABLE blocks a source).
+        await repository.updateAvailability(id, "UNKNOWN", now());
+        return { availabilityStatus: "UNKNOWN", reason: UNCONFIRMED_REASON };
       }
 
       await repository.updateAvailability(id, "AVAILABLE", now());
@@ -379,6 +465,10 @@ export function createAssociationService(deps: AssociationServiceDeps) {
         // Only pre-fills the admin's approval text; it never grants rights.
         if (adapter.licenseReference) {
           info.suggestedLicenseReference = adapter.licenseReference;
+        }
+
+        if (adapter.descriptor) {
+          info.descriptor = adapter.descriptor;
         }
 
         return info;

@@ -5,6 +5,7 @@ import {
   type ParseServersOptions,
   type PlaybackServerConfig,
 } from "./config";
+import { createEmbedAdapter } from "./embed.adapter";
 import { createFilesAdapter } from "./files.adapter";
 import { createM3uAdapter } from "./m3u.adapter";
 import { createRestAdapter } from "./rest.adapter";
@@ -29,6 +30,8 @@ export function buildServerAdapter(
       return createFilesAdapter({ config, fetchImpl: options.fetchImpl });
     case "rest":
       return createRestAdapter({ config, fetchImpl: options.fetchImpl });
+    case "embed":
+      return createEmbedAdapter({ config, fetchImpl: options.fetchImpl });
   }
 }
 

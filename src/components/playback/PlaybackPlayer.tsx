@@ -101,12 +101,21 @@ export default function PlaybackPlayer({
           src={source.url}
           title={title}
           className="h-full w-full border-0"
-          allow="autoplay; fullscreen; picture-in-picture"
+          allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
           allowFullScreen
+          // EMBED providers: scripts + same-origin (their own player needs
+          // them) and fullscreen, but no popups, no top-level navigation and
+          // no downloads. Other iframes keep their previous behavior.
+          sandbox={
+            source.sandbox
+              ? "allow-scripts allow-same-origin allow-presentation allow-forms"
+              : undefined
+          }
           // YouTube's embed requires an HTTP Referer to identify the site
-          // (its policy recommends this value); other providers get none.
+          // (its policy recommends this value), and so do many licensed embed
+          // players (origin-only, never the path); other providers get none.
           referrerPolicy={
-            source.provider === "youtube"
+            source.provider === "youtube" || source.sandbox
               ? "strict-origin-when-cross-origin"
               : "no-referrer"
           }

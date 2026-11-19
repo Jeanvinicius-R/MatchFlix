@@ -8,6 +8,7 @@ import {
   setRightsSchema,
 } from "@/schemas/playback-association.schemas";
 import {
+  AssetIdDerivationError,
   AssociationAlreadyExistsError,
   AssociationNotFoundError,
   LicenseReferenceRequiredError,
@@ -36,6 +37,7 @@ function toFailure(error: unknown): PlaybackActionState {
     error instanceof AssociationAlreadyExistsError ||
     error instanceof UnknownProviderError ||
     error instanceof AssociationNotFoundError ||
+    error instanceof AssetIdDerivationError ||
     error instanceof LicenseReferenceRequiredError
   ) {
     return { ok: false, message: error.message };
@@ -118,6 +120,12 @@ export async function verifyAssociationAction(
   revalidatePath("/admin/playback");
   if (result.availabilityStatus === "AVAILABLE") {
     return { ok: true, message: "Vídeo disponível no provedor." };
+  }
+  if (result.availabilityStatus === "UNKNOWN") {
+    return {
+      ok: true,
+      message: `Player acessível, mas a existência do vídeo não pôde ser confirmada. ${result.reason ?? ""}`.trim(),
+    };
   }
   return {
     ok: false,

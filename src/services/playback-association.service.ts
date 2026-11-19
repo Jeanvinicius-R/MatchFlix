@@ -7,6 +7,7 @@ import {
   updateAssociationRights,
 } from "@/repositories/playback-association.repository";
 import { adapters } from "@/services/playback/adapters/registry";
+import { getMovieExternalIds, getSeriesExternalIds } from "@/services/tmdb/tmdb.service";
 import { invalidatingPlayable } from "@/services/playback/playable-titles.default";
 import {
   createAssociationService,
@@ -19,6 +20,7 @@ import {
  */
 
 export {
+  AssetIdDerivationError,
   AssociationAlreadyExistsError,
   AssociationNotFoundError,
   LicenseReferenceRequiredError,
@@ -35,7 +37,17 @@ const repository: AssociationRepository = {
   remove: deleteAssociationRecord,
 };
 
-const service = createAssociationService({ repository, adapters });
+const service = createAssociationService({
+  repository,
+  adapters,
+  // Only EMBED providers keyed by IMDb id use this: the id comes from TMDB's
+  // external_ids endpoint, never from matching a title name.
+  lookupImdbId: async (tmdbId, mediaType) =>
+    (mediaType === "MOVIE"
+      ? await getMovieExternalIds(tmdbId)
+      : await getSeriesExternalIds(tmdbId)
+    ).imdbId,
+});
 
 export const { listAssociations, listAdapters } = service;
 
